@@ -186,7 +186,9 @@ Use `Storage::disk('local')` throughout. Add one `private` disk if the group-cha
 | Year / section | `models/YearSection.php` + `year-sections-api.php` | `YearSectionResource` (drop the unauthenticated script) |
 | User management | `UserController` + `users-api.php` | `UserResource` (drop the role-less script) |
 | Personal file drive | `FileController` + `user/views/files/*` (11 modules) | `MyDrive` page (student) + read-only `StoredFileResource` (staff) — **done** |
-| Group chat | `GroupChatController` + `admin|user/views/messages.js` | `GroupChatResource` + custom `ChatRoom` Livewire page |
+| Group chat | `GroupChatController` + `admin|user/views/messages.js` | `GroupChatResource` + `ChatRoom` on both panels — **done** |
+| Direct messages | `MessageController` (built, but no view ever linked to it) | `Messages` page on both panels — **done** |
+| Attachment downloads | None for messages; unauthenticated path parameter for group chat | Two policy-gated routes — **done** |
 | Remote monitoring | `MonitoringController` + Python agent + WS frames | **Decision required** — see [§7](#7-open-decisions) |
 | Broadcast | Stub | Drop, or scope fresh |
 | Accessibility | Dead JS/CSS + live-but-unauthenticated API | Drop, or build as an `AccessibilitySetting` relation manager |
@@ -222,7 +224,7 @@ Each phase is independently shippable. Phases 0–3 need no realtime; Phase 4 ne
 | 0 — Prerequisites | **Done.** Boost guidelines installed, `CLAUDE.md` re-synced, `.env.example` corrected |
 | 1 — Foundation | **Schema, models, policies and the first two resources done.** 18 migrations applied to `koben_lab`; 9 enums, 14 models, 13 factories, 14 policies; `UserResource` and `YearSectionResource` |
 | 2 — Labs and academics | **Done.** PC presence end to end (service, listeners, sweep, `PcResource`); `ScheduleObserver` + `ScheduleBookingRules`; `ClassSessionService`, `ScheduleResource`, `ClassSessionResource`, read-only attendance roster |
-| 3 — Storage and communication | File drive **done**: `FileService`, quota in one place, `MyDrive`, read-only `StoredFileResource`. Group chat, messages and the chat UI outstanding |
+| 3 — Storage and communication | **Done.** File drive (`FileService`, one quota path, `MyDrive`, read-only `StoredFileResource`), group chat (`GroupChatResource` + `ChatRoom` on both panels), direct messages (inbox + compose + broadcast), and both policy-gated download routes |
 | 4 — Dashboards and parity | Not started |
 | 5 — Realtime | Not started |
 
@@ -259,10 +261,36 @@ The target app has two setup gaps that will corrupt any migration work started b
 - [x] `stored_files` migration (self-referencing tree) + `StoredFile` model + `FileService`.
 - [x] Storage quota enforcement in one place (legacy has three disagreeing quota sources — see [schema-mapping.md](./schema-mapping.md#users)).
 - [x] `StoredFileResource` (read-only, staff support) + `MyDrive` page (breadcrumb, table listing, upload, new folder, quota readout).
-- [ ] `group_chats` + members + messages + reads migrations and models.
-- [ ] `GroupChatResource` + custom `ChatRoom` page.
-- [ ] `messages` + recipients + attachments. **Legacy has no attachment download endpoint** — build one.
-- [ ] Decide: keep the `messages`/`message_recipients` broadcast-mailbox feature, or retire it in favour of group chat? Legacy's admin "Messages" nav item is *already* just group chat.
+- [x] `group_chats` + members + messages + reads migrations and models.
+- [x] `GroupChatResource` (admin, with a members relation manager) + `ChatRoom` page on both panels.
+- [x] `messages` + recipients + attachments, plus the attachment download endpoint legacy never had.
+- [x] **Decision taken:** keep the direct-message mailbox *and* group chat. Legacy shipped both tables but no view ever linked to the mailbox, so the UI here is new surface, not a port.
+
+#### Communication: what was built and what it closed
+
+| Legacy behaviour | Now |
+| --- | --- |
+| `download-group-file.php` took a **path** and performed no membership check, so any signed-in user could fetch any group's attachments by guessing | `DownloadGroupChatFile` resolves a `GroupChatMessage` and asks `GroupChatMessagePolicy::download`, which defers to `GroupChatPolicy::view` |
+| Message attachments were listed but **no route served them** | `DownloadMessageAttachment`, gated by `MessageAttachmentPolicy`, which defers to `MessagePolicy` so an attachment can never be a way around the message's own visibility |
+| `Content-Disposition` built from an unsanitised filename | `Storage::download()` sets the header; a test asserts a CRLF filename cannot inject a header |
+| `GET /api/messages/{id}` did no recipient check | `MessagePolicy::view` is sender-or-recipient, **with no staff override** — an admin reading a teacher's private mail is not support work |
+| `str_shuffle()` for join codes, which is not cryptographically strong | `GroupChat::generateJoinCode()` uses `Str::random()` and retries on collision |
+| Membership check duplicated as an inline `foreach` in five controller methods | `GroupChatPolicy` / `GroupChatMessagePolicy`; the transcript logic lives once in `InteractsWithChatRoom` and each panel gets a thin `Page` |
+| Message rows created without `original_filename`, so the insert always threw | `FileService::storeMessageAttachment()` supplies it |
+
+Two Filament-specific traps found while building this, both worth remembering:
+
+- **`mount()` runs once per page load.** Marking a message read in `mount()` alone meant a message opened *from the list* stayed
+  unread until a reload, so the unread badge never cleared. Handled with `updatedMessageId()` plus an explicit call in the row
+  action, because assigning a public property server-side does not fire the updated hook.
+- **The admin panel discovers pages from `app/Filament/Pages`, not `app/Filament/Admin/Pages`.** A page placed in the
+  latter registers no route at all and fails silently.
+- **`protected static ?string $slug` is the page property**; `$routeSlug` is not read, so a wrong name fails silently and the
+  URL falls back to the class name.
+
+`Message` also gained `visibleTo()` / `unreadBy()` scopes so the inbox query and its unread count cannot disagree about who
+can see what, and `markReadBy()` now attaches a missing recipient row — `updateExistingPivot()` silently did nothing for a
+broadcast the reader had no pivot row for, leaving it unread for good.
 
 #### What the file drive closed
 

@@ -3,7 +3,6 @@
 namespace App\Filament\Concerns;
 
 use App\Enums\GroupMessageType;
-use App\Enums\GroupRole;
 use App\Models\GroupChat;
 use App\Models\GroupChatMessage;
 use App\Models\User;
@@ -59,7 +58,7 @@ trait InteractsWithChatRoom
      * MyDrive's upload field: RestrictsFileUploadsToSchemaComponents only accepts
      * upload targets that live in a discovered schema.
      *
-     * @var array<int, \Illuminate\Http\UploadedFile>
+     * @var array<int, UploadedFile>
      */
     public array $pendingFiles = [];
 
@@ -265,7 +264,10 @@ trait InteractsWithChatRoom
             ->color('primary')
             ->visible(fn (): bool => $this->currentGroup() !== null)
             ->disabled(fn (): bool => trim($this->draft) === '' && $this->pendingFiles === [])
-            ->authorize(fn (): bool => auth()->user()?->can('create', GroupChatMessage::class) ?? false)
+            // No ->authorize() here: GroupChatMessagePolicy::create needs a
+            // message instance, and its only real test is whether you may see the
+            // parent group — which currentGroup() has already enforced by the time
+            // this is evaluated.
             ->action(function () {
                 $group = $this->currentGroup();
                 $service = app(FileService::class);
@@ -323,9 +325,11 @@ trait InteractsWithChatRoom
                     ->autocomplete('off'),
             ])
             ->action(function (array $data): void {
+                // Exact match: generateJoinCode() uses Str::random(), so codes are
+                // mixed case. Folding case here would only reject the real code.
                 $group = GroupChat::query()
                     ->active()
-                    ->where('join_code', strtoupper(trim((string) $data['join_code'])))
+                    ->where('join_code', trim((string) $data['join_code']))
                     ->first();
 
                 // The code is the credential. Say nothing about whether it exists.

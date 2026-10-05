@@ -28,14 +28,14 @@ class ChatRoom extends Page implements HasActions, HasSchemas, HasTable
     use InteractsWithChatRoom;
     use InteractsWithSchemas;
 
+    use InteractsWithTable;
+
     /**
      * The composer holds a FileUpload, so the restriction is what stops an upload
      * being aimed at `draft` or `groupId` instead. Filament does not add it to
      * Pages on its own.
      */
     use RestrictsFileUploadsToSchemaComponents;
-
-    use InteractsWithTable;
 
     protected static string|BackedEnum|null $navigationIcon = 'heroicon-o-chat-bubble-left-right';
 

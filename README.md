@@ -7,6 +7,28 @@
 <a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
 </p>
 
+## KobenLabs
+
+A computer-lab management system built on Laravel and Filament, replacing the legacy
+PHP/PDO application.
+
+**New machine? Start here -> [`docs/setup.md`](docs/setup.md)** - prerequisites,
+database, install, creating the first admin, and a click-through walkthrough.
+
+Further reading:
+
+- [`docs/migration/README.md`](docs/migration/README.md) - migration plan, the
+  security debt being repaid, and why each decision went the way it did
+- [`docs/migration/legacy-system.md`](docs/migration/legacy-system.md) - what the old
+  system did
+- [`docs/migration/schema-mapping.md`](docs/migration/schema-mapping.md) - table and
+  column mapping
+- [`docs/migration/feature-mapping.md`](docs/migration/feature-mapping.md) - feature
+  parity
+
+Two Filament panels: staff at `/admin`, students at `/student`.
+
+---
 ## About Laravel
 
 Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:

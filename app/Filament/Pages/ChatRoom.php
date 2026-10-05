@@ -28,10 +28,8 @@ class ChatRoom extends Page implements HasActions, HasSchemas, HasTable
     use InteractsWithActions;
     use InteractsWithChatRoom;
     use InteractsWithSchemas;
-
-    use RestrictsFileUploadsToSchemaComponents;
-
     use InteractsWithTable;
+    use RestrictsFileUploadsToSchemaComponents;
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedChatBubbleLeftRight;
 

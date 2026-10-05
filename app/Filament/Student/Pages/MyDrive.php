@@ -43,7 +43,6 @@ class MyDrive extends Page implements HasActions, HasSchemas, HasTable
 {
     use InteractsWithActions;
     use InteractsWithSchemas;
-
     use InteractsWithTable;
 
     /**

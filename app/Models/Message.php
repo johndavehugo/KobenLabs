@@ -69,6 +69,36 @@ class Message extends Model
         $query->where('is_broadcast', true);
     }
 
+    /**
+     * Messages this user is allowed to see: broadcasts, plus anything they were
+     * sent directly.
+     *
+     * A broadcast counts even without a recipient row, because a student who
+     * enrolled after it was sent should still see it. That is also why
+     * markReadBy() attaches a row when one is missing.
+     */
+    #[Scope]
+    public function visibleTo(Builder $query, User $user): void
+    {
+        $query->where(fn (Builder $visible) => $visible
+            ->broadcasts()
+            ->orWhereHas('recipients', fn (Builder $recipients) => $recipients->whereKey($user->id)));
+    }
+
+    /**
+     * The unread half of visibleTo(): the user has no read receipt for these.
+     *
+     * Kept beside visibleTo() so the inbox query and its unread count can never
+     * disagree about who can see what.
+     */
+    #[Scope]
+    public function unreadBy(Builder $query, User $user): void
+    {
+        $query->whereDoesntHave('recipients', fn (Builder $read) => $read
+            ->whereKey($user->id)
+            ->whereNotNull('read_at'));
+    }
+
     // -----------------------------------------------------------------
     // Behaviour
     // -----------------------------------------------------------------
@@ -87,8 +117,22 @@ class Message extends Model
         return $this;
     }
 
+    /**
+     * Record a read receipt, attaching the recipient row when it is missing.
+     *
+     * updateExistingPivot() alone would silently do nothing for a broadcast the
+     * reader has no pivot row for, leaving it unread for good.
+     */
     public function markReadBy(User $user): void
     {
-        $this->recipients()->updateExistingPivot($user->id, ['read_at' => now()]);
+        $this->recipients()->syncWithoutDetaching([
+            $user->id => ['read_at' => now()],
+        ]);
+    }
+
+    public function isReadBy(User $user): bool
+    {
+        return $this->recipients
+            ->firstWhere('id', $user->id)?->pivot?->read_at !== null;
     }
 }
