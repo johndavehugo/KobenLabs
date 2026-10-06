@@ -14,7 +14,6 @@ Porting the legacy computer lab management system from framework-less PHP/PDO to
 | [README.md](./README.md) (this file) | Scope, target architecture, concept mapping, phased plan, risks, open decisions |
 | [legacy-system.md](./legacy-system.md) | As-built inventory of the legacy system: schema, features, endpoints, roles, realtime, tests, dead code |
 | [schema-mapping.md](./schema-mapping.md) | Table-by-table legacy → Laravel migration mapping with rationale |
-| [feature-mapping.md](./feature-mapping.md) | Feature → Filament resource/page/widget mapping, endpoint mapping, parity checklist, security must-fix list |
 
 ---
 
@@ -27,7 +26,7 @@ All 8 live feature areas of the legacy app: PC inventory, class sessions, attend
 - **Broadcast** — legacy is a stub ("under development"). No backend, no client implementation.
 - **Reports** — referenced throughout the legacy docs and tests, **does not exist in code**. No resource, no route, no view.
 - **Student attendance summaries** — a 239-line view exists but is unreachable and its endpoint was never routed.
-- **Screen monitoring** — covert screen streaming of student PCs. Implemented and working in legacy, but carries consent/legal implications. See [§7](#7-open-decisions).
+- **Screen monitoring** — covert screen streaming of student PCs. Implemented and working in legacy, but carries consent/legal implications. **Dropped, not ported** — see [§7](#7-decisions).
 - **Accessibility panel** — specified in `USER_MANUAL.md` to WCAG 2.1 AA, but the implementing JS/CSS is entirely dead code. The table (`accessibility_settings`) is populated by an API with no auth check.
 
 ### Target state
@@ -189,8 +188,8 @@ Use `Storage::disk('local')` throughout. Add one `private` disk if the group-cha
 | Group chat | `GroupChatController` + `admin|user/views/messages.js` | `GroupChatResource` + `ChatRoom` on both panels — **done** |
 | Direct messages | `MessageController` (built, but no view ever linked to it) | `Messages` page on both panels — **done** |
 | Attachment downloads | None for messages; unauthenticated path parameter for group chat | Two policy-gated routes — **done** |
-| Remote monitoring | `MonitoringController` + Python agent + WS frames | **Decision required** — see [§7](#7-open-decisions) |
-| Broadcast | Stub | Drop, or scope fresh |
+| Remote monitoring | `MonitoringController` + Python agent + WS frames | **Dropped, not ported** — see [§7](#7-decisions) |
+| Broadcast | Stub | Self-hosted Reverb, three authorized private channels — **done** |
 | Accessibility | Dead JS/CSS + live-but-unauthenticated API | Drop, or build as an `AccessibilitySetting` relation manager |
 
 ### Data → target
@@ -235,7 +234,7 @@ The target app has two setup gaps that will corrupt any migration work started b
 - [ ] Run `php artisan boost:install` — `AGENTS.md` still contains only the pre-install bootstrap placeholders. Boost will replace them with project-specific guidelines, and **will rewrite `AGENTS.md`**.
 - [ ] Fix `.env.example` — it declares `DB_CONNECTION=sqlite` and comments out every credential, while the live app runs MySQL `koben_lab`. As written it will mislead every setup and CI step.
 - [ ] Enable Filament auth features that legacy implicitly had: `->passwordReset()`, `->profile()`, `->registration()` (off — accounts are created by staff).
-- [ ] Decide and record the answers to [§7](#7-open-decisions). Several block later phases.
+- [x] Record the decisions in [§7](#7-decisions). Screens, broadcast, messages, quota, PC identity, session timeout and accessibility settled; reports and Echo listeners remain.
 
 ### Phase 1 — Foundation: identity, roles, academic structure
 
@@ -322,18 +321,20 @@ legacy code:
 
 ### Phase 4 — Dashboards and parity
 
-- [ ] Admin dashboard widgets (PC status doughnut, active session, occupancy).
-- [ ] Student dashboard widgets (storage %, unread count, recent activity).
-- [ ] Walk the parity checklist in [feature-mapping.md](./feature-mapping.md#6-parity-checklist).
+- [x] Admin dashboard widgets (PC status doughnut, active session, occupancy).
+- [x] Student dashboard widgets (storage %, unread count, recent activity).
+- [x] Attendance summary per subject for students.
 - [ ] Port the verified legacy integration-test surface to Pest. Legacy's suites confirm only auth, users, PCs, schedules, messages, and files — see [legacy-system.md](./legacy-system.md#7-testing) for what is genuinely covered versus what merely appears to be.
+
+There is no separate parity checklist document. Parity is tracked by the test suite, which is the more reliable record: it cannot go stale the way a hand-maintained checklist did. `php artisan test --compact` is the authority on what is covered.
 
 ### Phase 5 — Realtime
 
-- [ ] `php artisan install:broadcasting`; pick Reverb or Pusher; publish `config/broadcasting.php`; uncomment the `broadcasting.echo` block in `config/filament.php`.
-- [ ] Broadcast events: `PcStatusUpdated`, `ClassSessionStarted`, `ClassSessionEnded`, `StudentJoinedClass`, `GroupChatMessageSent`.
-- [ ] Private channels with `routes/channels.php` authorization — **the legacy socket has no auth at all; do not port that**.
-- [ ] Echo on both panels. `->broadcasting(false)` on the student panel if students should only poll.
-- [ ] Port or retire the Python screen agent.
+- [x] Self-hosted Reverb (`laravel/reverb`), `config/broadcasting.php`, active `broadcasting.echo` block in `config/filament.php`.
+- [x] Broadcast events: `PcStatusUpdated`, `ClassSessionStarted`, `ClassSessionEnded`, `StudentJoinedClass`, `GroupChatMessageSent`.
+- [x] Private channels with `routes/channels.php` authorization — **the legacy socket has no auth at all; do not port that**.
+- [x] Echo listeners on both panels, registered at `PanelsRenderHook::SCRIPTS_AFTER`. Reverb is self-hosted so student attendance and PC activity stay on school infrastructure rather than a hosted service with a per-connection quota.
+- [x] Python screen agent retired — **dropped, not ported**.
 
 ---
 
@@ -376,21 +377,49 @@ Do **not** port these. The legacy app has them in production code today.
 
 On #15: the legacy `audit_logs` table has the right shape (user, action, entity type/id, details, IP, user agent, timestamp) and is simply unwired. Adopt it as the real audit trail — an `AuditObserver` on the models that matter, writing through a queued job. This is the one place where carrying a legacy artifact forward is clearly better than starting fresh.
 
+**Now wired.** `AuditableObserver` plus the queued `RecordAuditEntry` job, registered from `config('lab.audit.models')`.
+
+Two decisions worth stating, because both trade completeness for usefulness:
+
+- **Only a configured list of models, not everything.** Attendance rows, PC sessions and chat messages would bury the entries that matter — a promoted user, a deleted drive, a changed schedule.
+- **Changes, not reads.** Polling every read would make the trail useless.
+
+Passwords are redacted before they reach the log. An audit trail is readable by staff, so a password hash in it is a credential store with a helpful index. `AuditTrailTest` covers the redaction, the from/to pairs, the self-exclusion and the unauthenticated case (seeding writes a row with a null user rather than dropping it).
+
+**Trade-off:** the write is queued, so an audit failure never rolls back the staff action that caused it — and if the queue is down the entry is lost. Deliberate.
+
+On #7: replaced with a self-hosted **Laravel Reverb** server. `routes/channels.php` declares three private channels, each asking a policy:
+
+| Channel | Who may subscribe | Why |
+|---|---|---|
+| `pcs` | staff only | PC inventory and occupancy are not a student's business |
+| `class-sessions` | any authenticated user | The student panel needs to be told when a class starts, which is what makes the Join Class button appear |
+| `groups.{groupId}` | group members and staff | The group id is in the channel name, so `GroupChatPolicy::view` decides — a client cannot subscribe to a group it is not in |
+
+Note that `class-sessions` carries `StudentJoinedClass`, so a student learns that *other* students joined a running class. That roster information was already visible to every signed-in user in the legacy app through an unauthenticated endpoint; the roster rows themselves still come from `AttendancePolicy`, which only lets the session's own teacher read them. Narrowing this channel per session is the obvious next tightening.
+
+`BroadcastChannelAuthTest` pins all of it, including the deny-by-default case: a channel nobody declared is not subscribable.
+
 ---
 
-## 7. Open decisions
+## 7. Decisions
 
-These need a product answer. Several block later phases.
+### Settled
 
-1. **Screen monitoring — keep or drop?** Legacy streams student screens to teachers at up to 20 FPS over the LAN, gated on class attendance. It works, and `agent/screen_agent.py` plus a 30 MB vendored Python installer are committed. It also raises consent and legality questions that did not exist when this was a capstone project. **Recommendation: drop it.** Do not port the covert-streaming feature without an explicit decision.
-2. **Broadcast — build or drop?** Legacy is a stub with no backend. Decide before Phase 3 so the resource list is final.
-3. **Reports — build or drop?** Referenced by four legacy documents and the entire test suite; implemented nowhere.
-4. **The `messages` feature — keep or retire?** Admin and student "Messages" nav items both render group chat. The `messages` / `message_recipients` / `message_attachments` tables power a separate broadcast-mailbox feature that the UI appears to have stopped using. **Recommendation: verify with the original authors, then probably retire.**
-5. **Student attendance summaries** — a complete unreachable view exists. Build the endpoint, or delete the view?
-6. **Storage quota values.** Legacy states them four different ways: 100/500/1000 MB (`config/config.php`), 500/2000 MB (`schema.sql` seeds), 100 MB for new users (`UserController::store()`), 500 MB (`system_config`). **Recommendation: 500 MB student / 2 GB teacher / 5 GB admin, in `config/lab.php`.**
-7. **Session timeout.** Documented as 10 minutes, 30 minutes, 30 minutes, and 1 hour in four places.
-8. **PC identity: IP or MAC?** Actual current state is IP-keyed with decorative MAC. `plans/mac-address-*.md` proposes MAC as the identity but was reverted.
-9. **Accessibility.** Fully specified to WCAG 2.1 AA in `USER_MANUAL.md`; implemented only as dead CSS/JS. Build it, or accept Filament's defaults as the accessibility story?
+1. **Screen monitoring — DROPPED.** Not ported. Legacy streams student screens to teachers at up to 20 FPS over the LAN. Streaming a student's screen to an authority figure without an explicit consent mechanism raises questions the original capstone project never had to answer. `agent/screen_agent.py` and the vendored 30 MB Python installer stay in the legacy repository; nothing was carried across. Security item 23 no longer applies.
+2. **Broadcast — BUILDING, self-hosted.** Legacy was a stub with no backend. Chose a **self-hosted Laravel Reverb** server over Pusher: this is a single-school lab, and a hosted websocket would put student attendance and PC activity on someone else's infrastructure for a per-connection message quota. Three private channels, each authorized by a policy. See [security debt #7](#6-security-debt-to-repay).
+3. **The `messages` feature — KEPT and given a UI.** The legacy controller was fully implemented (index, show, store, addAttachment, markAsRead, getUnreadCount, destroy) but no view ever linked to it, so it was unreachable. Built rather than retired: a student inbox, staff compose, broadcast to all students, and the attachment download endpoint legacy never had. This is new surface, not a port.
+4. **Storage quota — 500 MB student / 2 GB teacher / 5 GB admin**, in `config('lab.storage')`. Legacy stated four different values.
+5. **PC identity: IP.** Already the case in the built code; MAC is nullable and decorative, matching legacy's actual state.
+6. **Session timeout — 120 minutes**, in `config('lab.session.lifetime_minutes')`. Legacy's documentation claimed 10, 30, 30 and 60 minutes in four places while the code ran a 10-minute sliding window. Filament 5 removed the panel-level `authTimeout()` knob, so the session lifetime is the only control and there is nothing for it to drift against.
+7. **Accessibility — audit the real pages, don't port the legacy CSS.** `USER_MANUAL.md` specifies WCAG 2.1 AA; the legacy implementation is dead CSS and JS. Filament ships accessible components, so the risk sits in markup added on top. Reviewed and fixed the custom surfaces, with `tests/Feature/AccessibilityTest.php` pinning them.
+
+### Still open
+
+- **Reports** — referenced by four legacy documents and the entire legacy test suite; implemented nowhere.
+- **Student attendance summaries** — *done*: `AttendanceSummaryService` plus a `MyAttendance` page on the student panel. The legacy view was unreachable, so this was rebuilt rather than ported.
+- **Whole-folder upload (`webkitdirectory`)** — deliberately not built. Filament 5 has no helper for it, and browsers do not send relative paths in the multipart filename, so a server-side tree rebuild is impossible without custom client JavaScript. Left as a known gap rather than shipped half-working.
+- **Echo listeners** — the server publishes and authorizes, but no browser subscribes yet. Realtime therefore still requires pressing Refresh.
 
 ---
 

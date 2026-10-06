@@ -3,9 +3,9 @@
 namespace App\Filament\Resources\Schedules\Pages;
 
 use App\Filament\Resources\Concerns\GuardsScheduleBooking;
+use App\Filament\Resources\Pages\EditRecord;
 use App\Filament\Resources\Schedules\ScheduleResource;
 use Filament\Actions\DeleteAction;
-use Filament\Resources\Pages\EditRecord;
 
 class EditSchedule extends EditRecord
 {

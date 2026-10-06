@@ -3,8 +3,8 @@
 namespace App\Filament\Resources\GroupChats\Pages;
 
 use App\Filament\Resources\GroupChats\GroupChatResource;
+use App\Filament\Resources\Pages\ListRecords;
 use Filament\Actions\CreateAction;
-use Filament\Resources\Pages\ListRecords;
 
 class ListGroupChats extends ListRecords
 {

@@ -199,7 +199,10 @@ class Messages extends Page implements HasActions, HasSchemas, HasTable
             ->records(fn (): Collection => $this->mailbox())
             ->columns([
                 IconColumn::make('read_at')
-                    ->label('')
+                    // Read state is the entire point of this column, and an
+                    // unlabelled envelope icon announces nothing to a screen reader.
+                    ->label('Status')
+                    ->tooltip(fn (Message $record): string => $this->isUnread($record) ? 'Unread' : 'Read')
                     ->icon(fn (Message $record): ?string => $this->isUnread($record)
                         ? Heroicon::Envelope
                         : null)

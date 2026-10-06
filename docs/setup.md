@@ -107,16 +107,25 @@ DB_PASSWORD=
 SESSION_DRIVER=database
 CACHE_STORE=database
 QUEUE_CONNECTION=database
-BROADCAST_CONNECTION=log
+BROADCAST_CONNECTION=reverb
 FILESYSTEM_DISK=local
+
+REVERB_APP_ID=
+REVERB_APP_KEY=
+REVERB_APP_SECRET=
+REVERB_HOST=localhost
+REVERB_PORT=8080
+REVERB_SCHEME=http
 ```
 
 Those non-default drivers are deliberate:
 
 - `SESSION_DRIVER`, `CACHE_STORE` and `QUEUE_CONNECTION` are `database` so a fresh
   clone needs no extra services.
-- `BROADCAST_CONNECTION=log` means realtime events are written to the log instead of
-  being delivered. Broadcasting is Phase 5 work; nothing depends on it yet.
+- `BROADCAST_CONNECTION=reverb` points at a **self-hosted websocket server** rather
+  than a hosted one, because this is a single-school lab. Generate real credentials
+  with `php artisan reverb:install` — if the `REVERB_*` values above are empty, that
+  command has not been run yet.
 
 ### If `composer run setup` fails
 
@@ -208,19 +217,24 @@ php artisan tinker --execute 'App\Models\User::create(["username"=>"admin","emai
 composer run dev
 ```
 
-This runs three things at once via `concurrently`:
+This runs four things at once via `concurrently`:
 
 | Process | Why it is needed |
 | --- | --- |
 | `php artisan schedule:work` | Runs `pcs:mark-stale-offline` every five minutes |
-| `php artisan queue:listen` | Drains the database queue |
+| `php artisan queue:listen` | Drains the database queue, including audit-log writes |
+| `php artisan reverb:start` | The websocket server on port 8080 |
 | `npm run dev` | Vite, for hot reloading of CSS/JS |
 
 It deliberately does **not** start a web server — Herd serves the app.
 
-If you only want to click through the UI, `composer run dev` is optional except for
-the PC stale sweep. For an unattended test machine, run the scheduler as a Windows
-Scheduled Task or a cron entry instead.
+**If port 8080 is already taken**, something else on the machine holds it. Change
+`REVERB_PORT` in `.env`, and remember the Vite build reads it at build time, so re-run
+`npm run build` after changing it.
+
+If you only want to click through the UI, `composer run dev` is optional. Without it
+you lose the PC stale sweep, queued audit writes and CSS hot reload — but nothing
+breaks, because no browser subscribes to a websocket channel yet (see section 12).
 
 ---
 
@@ -230,7 +244,7 @@ Scheduled Task or a cron entry instead.
 php artisan test --compact
 ```
 
-Expected: **266 tests, 890 assertions, all passing.** The suite uses in-memory SQLite
+Expected: **339 tests, 1089 assertions, all passing.** The suite uses in-memory SQLite
 and touches neither your dev database nor your uploaded files.
 
 ```bash
@@ -276,26 +290,30 @@ the UI on purpose — it doubles as a smoke test.
 **As the student, in a private browser window** (`http://kobenlabs.test/student`):
 
 8. Sign in as `koben.student`. The student panel shows only *My Drive*, *Class*,
-   *Group Chat* and *Messages* — the admin resources are not reachable, and the URL
-   returns 403.
+   *Group Chat*, *Messages* and *My Attendance* — the admin resources are not
+   reachable, and the URL returns 403.
 9. **Class** — a *Join class* button appears for the running session. Press it, then
    re-check the staff **Class Sessions** roster: the student is listed.
 10. **My Drive** — create a folder, upload a `.txt` or `.png`. The Type column shows
-    the *sniffed* MIME type. Try uploading a `.exe` and watch it be rejected. Open
+    the *sniffed* MIME type. Try uploading a `.exe` and watch it be rejected. Switch
+    to grid view, rename a file, download a folder as a ZIP. Open
     `/admin/stored-files` in the admin window: the file is visible to staff.
 11. **Group Chat** — send a message, attach a file, download it back.
 12. **Messages** — the message from step 6 appears, opening it clears the unread
     count, and the attachment downloads.
+13. **My Attendance** — the rate reflects step 9: attended 1 of 1 completed class.
 
 Things that will *not* work yet, so you do not think they are broken:
 
 - PC status will not change on its own. There is no PC auto-detect on login in this
   app; a PC is marked online by calling `PcPresenceService` or running the stale
   sweep.
-- Nothing updates in real time. `BROADCAST_CONNECTION=log`, so the Join Class button
-  does not light up by itself — press **Refresh**.
+- Nothing updates in real time in the browser. The server publishes to Reverb and
+  authorizes every channel, but no page subscribes yet, so press **Refresh**.
 - Message attachments and group chat file uploads are counted against the **sender's**
   quota, which is the fix for the legacy bug; there is no per-recipient quota.
+- Audit entries appear a moment after the change, because they are queued. Run
+  `composer run dev` (or `php artisan queue:work`) or they will sit unprocessed.
 
 ---
 
@@ -359,25 +377,29 @@ Honest status, so a missing feature reads as "not built yet" rather than "broken
 - Two panels with strict authorisation: staff on `/admin`, students on `/student`.
 - Users, year/sections, PCs, schedules, class sessions with a live attendance roster.
 - Personal file drive with one upload policy and one quota path, plus a read-only
-  staff view.
+  staff view. Rename, folder-as-ZIP, image previews, list/grid toggle, search and
+  sorting.
 - Group chat on both panels, with members managed by staff and join codes for students.
 - Direct messages: student inbox, staff compose, broadcast to all students, and
   policy-gated attachment downloads.
+- Student attendance summary with a per-subject breakdown.
+- Audit trail: config-driven model list, queued writes, redacted passwords.
+- Broadcasting: self-hosted Reverb, three private channels, every channel authorized
+  by a policy. Reverb is installed and verified listening.
 
 **Not built yet:**
 
-- **Broadcasting.** `BROADCAST_CONNECTION=log`. PC status, class session events and
-  chat refresh on a manual **Refresh**, not in real time.
+- **Browser websocket listeners.** The server publishes and authorizes every event,
+  and Reverb runs, but no page subscribes to a channel — so the UI still needs
+  **Refresh**. This is the remaining work in Phase 5, not a configuration gap.
+- **Whole-folder upload.** Filament 5 has no `webkitdirectory` helper, and browsers do
+  not send relative paths in the multipart filename, so rebuilding the tree on the
+  server would need custom client JavaScript.
 - **PC auto-detect on login.** No IP matching; a PC is marked online through
   `PcPresenceService`.
-- **File previews.** Images are listed by type but not shown inline.
 - **No seeders, no data import, no legacy database migration.**
 - **`pest-plugin-livewire` is not installed.** `livewire()` in `tests/Pest.php` is a
   local helper. Do not assume Livewire testing helpers you have seen elsewhere exist.
-- The **admin resources** do not yet carry `RestrictsFileUploadsToSchemaComponents`.
-  The two student pages do. Filament only adds that trait to its own authentication
-  pages, so any admin page that should not accept an upload is, in principle, a
-  tampering target. Worth adding before the admin panel is exposed to users.
 
 Further reading: `docs/migration/README.md` covers the migration plan, the security
 debt being repaid, and why each decision went the way it did.

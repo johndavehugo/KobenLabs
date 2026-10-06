@@ -1,5 +1,13 @@
 <?php
 
+use App\Models\ClassSession;
+use App\Models\GroupChat;
+use App\Models\Pc;
+use App\Models\Schedule;
+use App\Models\StoredFile;
+use App\Models\User;
+use App\Models\YearSection;
+
 return [
 
     /*
@@ -18,9 +26,17 @@ return [
     */
 
     'session' => [
-        // Legacy effective value was a 10 minute sliding window (gc_maxlifetime
-        // of 600s, kept alive by a 5 minute heartbeat). The docs variously
-        // claimed 10, 30, 30 and 60 minutes.
+        /*
+         * Legacy effective value was a 10 minute sliding window (gc_maxlifetime
+         * of 600s, kept alive by a 5 minute heartbeat). Its documentation claimed
+         * 10, 30, 30 and 60 minutes in four different places, none of which
+         * matched the code.
+         *
+         * Settled at 120 minutes. Filament 5 has no per-panel auth timeout — the
+         * panel's `authTimeout()` was removed — so the session lifetime is the
+         * only control and there is nothing for it to drift against. Keep
+         * SESSION_LIFETIME in .env in step if you change this.
+         */
         'lifetime_minutes' => (int) env('LAB_SESSION_LIFETIME', 120),
     ],
 
@@ -107,6 +123,28 @@ return [
         // Dispatch audit writes through the queue so logging never blocks a
         // request. The legacy audit_logs table was created but never written to.
         'queue' => env('LAB_AUDIT_QUEUE', 'default'),
+
+        /*
+         * Models whose create/update/delete is recorded in audit_logs.
+         *
+         * Deliberately an explicit list rather than "everything". Attendance,
+         * PC sessions and chat messages are high-volume and would bury the rows
+         * that matter — a promoted user, a deleted drive, a changed schedule.
+         * Add a model here when a change to it would need explaining afterwards.
+         */
+        'models' => [
+            User::class,
+            Pc::class,
+            Schedule::class,
+            ClassSession::class,
+            YearSection::class,
+            StoredFile::class,
+            GroupChat::class,
+        ],
+
+        // Attributes that must never reach audit_logs. Password hashes are the
+        // important one: an audit trail is readable by staff.
+        'redact' => ['password', 'remember_token', 'secret', 'token'],
     ],
 
 ];

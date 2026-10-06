@@ -3,6 +3,7 @@
 namespace App\Filament\Concerns;
 
 use App\Enums\GroupMessageType;
+use App\Events\GroupChatMessageSent;
 use App\Models\GroupChat;
 use App\Models\GroupChatMessage;
 use App\Models\User;
@@ -24,6 +25,7 @@ use Filament\Tables\Table;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Validation\ValidationException;
+use Livewire\Attributes\On;
 use Livewire\Attributes\Url;
 
 /**
@@ -136,6 +138,21 @@ trait InteractsWithChatRoom
         $this->ensureGroupIsReadable();
     }
 
+    /**
+     * A message sent by anyone else in the group. Re-rendering is the whole response:
+     * the transcript is read from the database inside `chatMessages()`, so the client
+     * never has to be trusted to supply message content.
+     *
+     * The browser works out which group channel to open from this page's own
+     * `groupId` property, so there is no channel name to hand over here - see
+     * resources/js/echo.js.
+     */
+    #[On('koben:group-message-sent')]
+    public function refreshTranscript(): void
+    {
+        $this->dispatch('$refresh');
+    }
+
     // -----------------------------------------------------------------
     // Schema
     // -----------------------------------------------------------------
@@ -209,7 +226,11 @@ trait InteractsWithChatRoom
                     ->html(),
 
                 IconColumn::make('type')
-                    ->label('')
+                    // Not left blank: an empty column header leaves the icon with
+                    // no accessible name, so the only thing distinguishing a file
+                    // message from a text one would be the glyph itself.
+                    ->label('Kind')
+                    ->tooltip(fn (GroupChatMessage $record): string => $record->type?->label() ?? 'Message')
                     ->icon(fn (GroupChatMessage $record) => match ($record->type) {
                         GroupMessageType::File, GroupMessageType::Image => Heroicon::PaperClip,
                         GroupMessageType::System => Heroicon::InformationCircle,
@@ -280,11 +301,14 @@ trait InteractsWithChatRoom
                 $attachments = $this->pendingFiles;
 
                 if ($body !== '') {
-                    $group->chatMessages()->create([
-                        'sender_id' => $this->user()->id,
-                        'body' => $body,
-                        'type' => GroupMessageType::Text,
-                    ]);
+                    $this->announce(
+                        $group->chatMessages()->create([
+                            'sender_id' => $this->user()->id,
+                            'body' => $body,
+                            'type' => GroupMessageType::Text,
+                        ]),
+                        $group,
+                    );
                 }
 
                 foreach ($attachments as $upload) {
@@ -293,7 +317,10 @@ trait InteractsWithChatRoom
                     }
 
                     try {
-                        $service->storeGroupChatFile($upload, $this->user(), $group);
+                        $this->announce(
+                            $service->storeGroupChatFile($upload, $this->user(), $group),
+                            $group,
+                        );
                     } catch (ValidationException $exception) {
                         Notification::make()
                             ->danger()
@@ -308,6 +335,19 @@ trait InteractsWithChatRoom
 
                 Notification::make()->success()->title('Sent')->send();
             });
+    }
+
+    /**
+     * Broadcast a newly posted message to the group's private channel.
+     *
+     * `BROADCAST_CONNECTION=log` means this currently writes to the log rather than
+     * reaching anyone, which is why the manual Refresh button still exists. The
+     * event is dispatched unconditionally so switching the connection needs no code
+     * change here.
+     */
+    private function announce(GroupChatMessage $message, GroupChat $group): void
+    {
+        GroupChatMessageSent::dispatch($message, $group);
     }
 
     public function joinByCodeAction(): Action

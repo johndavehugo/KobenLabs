@@ -15,6 +15,8 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpFoundation\StreamedResponse;
+use ZipArchive;
 
 /**
  * Everything that touches the file drive.
@@ -269,7 +271,125 @@ class FileService
     }
 
     /**
-     * Remove a node and everything beneath it, rows and blobs, then resync usage.
+     * Rename a node.
+     *
+     * Only the label changes. The stored path is derived from the folder tree and a
+     * UUID, never from the name, so renaming cannot orphan a file — which is why the
+     * legacy rename endpoint could safely have existed but did not.
+     *
+     * @throws ValidationException
+     */
+    public function rename(StoredFile $file, string $name): StoredFile
+    {
+        Gate::authorize('update', $file);
+
+        $name = $this->displayName($name);
+
+        if ($name === '' || $name === $file->name) {
+            return $file;
+        }
+
+        $clash = StoredFile::query()
+            ->where('user_id', $file->user_id)
+            ->where('parent_id', $file->parent_id)
+            ->where('name', $name)
+            ->whereKeyNot($file->getKey())
+            ->exists();
+
+        if ($clash) {
+            throw ValidationException::withMessages([
+                'name' => 'Something with that name already exists here.',
+            ]);
+        }
+
+        $file->forceFill([
+            'name' => $name,
+            // original_name is what a download is labelled with, so it follows a rename
+            // for files. For folders it is unused and left alone.
+            'original_name' => $file->is_folder ? $file->original_name : $name,
+        ])->save();
+
+        return $file;
+    }
+
+    /**
+     * Bundle a folder's contents into a ZIP for download.
+     *
+     * Writes to a temporary stream rather than to the disk, so a large folder does not
+     * leave an archive behind if the response is abandoned halfway.
+     */
+    public function zipFolderContents(StoredFile $folder): StreamedResponse
+    {
+        Gate::authorize('view', $folder);
+
+        if (! $folder->is_folder) {
+            throw ValidationException::withMessages([
+                'folder' => 'Only a folder can be downloaded as a ZIP.',
+            ]);
+        }
+
+        $disk = $this->disk();
+        $archiveName = Str::slug($folder->name).'.zip';
+
+        return response()->streamDownload(function () use ($folder, $disk): void {
+            $zip = new ZipArchive;
+            $temporary = tempnam(sys_get_temp_dir(), 'koben-zip-');
+
+            $zip->open($temporary, ZipArchive::OVERWRITE | ZipArchive::CREATE);
+
+            foreach ($this->collectFiles($folder) as $path => $diskPath) {
+                // Only add if the blob is actually there: an entry that points at
+                // nothing would make the archive fail to extract at all.
+                if ($disk->exists($diskPath)) {
+                    $zip->addFromString($path, (string) $disk->get($diskPath));
+                }
+            }
+
+            $zip->close();
+
+            readfile($temporary);
+            @unlink($temporary);
+        }, $archiveName, ['Content-Type' => 'application/zip']);
+    }
+
+    /**
+     * Every file beneath a folder, keyed by its path relative to the folder.
+     *
+     * Paths are built from names, not from stored paths, because the entry names
+     * inside the archive are what a user sees when they extract it.
+     *
+     * @return array<string, string>
+     */
+    private function collectFiles(StoredFile $folder): array
+    {
+        $entries = [];
+
+        // Breadth-first with an explicit [prefix, node] pair: a plain
+        // name => model map would come back from array_shift() with a string key,
+        // which list destructuring cannot unpack.
+        $queue = [[$folder->name, $folder]];
+
+        while ($queue !== []) {
+            [$prefix, $node] = array_shift($queue);
+
+            foreach ($node->children()->orderBy('name')->get() as $child) {
+                $path = $prefix.'/'.$child->name;
+
+                if ($child->is_folder) {
+                    $queue[] = [$path, $child];
+
+                    continue;
+                }
+
+                $entries[$path] = $child->path;
+            }
+        }
+
+        return $entries;
+    }
+
+    /**
+     * Bundle a node and everything beneath it, rows and blobs, then resync usage.
      *
      * The traversal lives on `StoredFile`; this wrapper adds the authorization and
      * the accounting, so no caller can forget either.

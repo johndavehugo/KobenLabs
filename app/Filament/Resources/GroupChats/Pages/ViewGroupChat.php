@@ -3,8 +3,8 @@
 namespace App\Filament\Resources\GroupChats\Pages;
 
 use App\Filament\Resources\GroupChats\GroupChatResource;
+use App\Filament\Resources\Pages\ViewRecord;
 use Filament\Actions\EditAction;
-use Filament\Resources\Pages\ViewRecord;
 
 class ViewGroupChat extends ViewRecord
 {

@@ -16,18 +16,31 @@ return [
 
     'broadcasting' => [
 
-        // 'echo' => [
-        //     'broadcaster' => 'pusher',
-        //     'key' => env('VITE_PUSHER_APP_KEY'),
-        //     'cluster' => env('VITE_PUSHER_APP_CLUSTER'),
-        //     'wsHost' => env('VITE_PUSHER_HOST'),
-        //     'wsPort' => env('VITE_PUSHER_PORT'),
-        //     'wssPort' => env('VITE_PUSHER_PORT'),
-        //     'authEndpoint' => '/broadcasting/auth',
-        //     'disableStats' => true,
-        //     'encrypted' => true,
-        //     'forceTLS' => env('VITE_PUSHER_SCHEME', 'https') === 'https',
-        // ],
+        /*
+         * Echo, pointed at a self-hosted Reverb server.
+         *
+         * Self-hosted rather than Pusher: this is a single-school lab, and a
+         * hosted websocket would put student attendance and PC activity on
+         * someone else's infrastructure for a per-connection message quota.
+         *
+         * `encrypted` is off because Reverb's default local transport is plain
+         * ws://, and forcing TLS would make the browser refuse to connect. The
+         * channel rules in routes/channels.php are what actually protect the
+         * events — the legacy socket had none at all.
+         */
+        'echo' => [
+            'broadcaster' => 'reverb',
+            'key' => env('VITE_REVERB_APP_KEY'),
+            'wsHost' => env('VITE_REVERB_HOST'),
+            'wsPort' => env('VITE_REVERB_PORT', 80),
+            'wssPort' => env('VITE_REVERB_PORT', 443),
+            'forceTLS' => env('VITE_REVERB_SCHEME', 'http') === 'https',
+            'enabledTransports' => ['ws', 'wss'],
+            // The server decides who may subscribe, per channel, per request.
+            'authEndpoint' => '/broadcasting/auth',
+            'disableStats' => true,
+            'encrypted' => false,
+        ],
 
     ],
 

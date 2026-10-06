@@ -2,8 +2,8 @@
 
 namespace App\Filament\Resources\Pcs\Pages;
 
+use App\Filament\Resources\Pages\CreateRecord;
 use App\Filament\Resources\Pcs\PcResource;
-use Filament\Resources\Pages\CreateRecord;
 
 class CreatePc extends CreateRecord
 {

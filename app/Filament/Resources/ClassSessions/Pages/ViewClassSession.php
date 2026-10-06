@@ -3,7 +3,8 @@
 namespace App\Filament\Resources\ClassSessions\Pages;
 
 use App\Filament\Resources\ClassSessions\ClassSessionResource;
-use Filament\Resources\Pages\ViewRecord;
+use App\Filament\Resources\Pages\ViewRecord;
+use Livewire\Attributes\On;
 
 class ViewClassSession extends ViewRecord
 {
@@ -34,5 +35,16 @@ class ViewClassSession extends ViewRecord
             auth()->user()?->can('viewAttendance', $this->getRecord()) ?? false,
             403,
         );
+    }
+
+    /**
+     * The roster grows as students join. `StudentJoinedClass` is broadcast to this
+     * channel, so the attendance relation manager re-queries without the teacher
+     * reloading - which is what the legacy page did by polling.
+     */
+    #[On('koben:class-session-started')]
+    public function refreshRoster(): void
+    {
+        $this->dispatch('$refresh');
     }
 }

@@ -1,7 +1,14 @@
 <?php
 
+use App\Filament\Pages\ChatRoom as AdminChatRoom;
+use App\Filament\Pages\Messages as StaffMessages;
+use App\Filament\Resources\Pcs\Pages\CreatePc;
+use App\Filament\Resources\Pcs\Pages\EditPc;
+use App\Filament\Resources\Pcs\Pages\ListPcs;
+use App\Filament\Resources\Users\Pages\ListUsers;
 use App\Filament\Student\Pages\JoinClass;
 use App\Filament\Student\Pages\MyDrive;
+use App\Models\Pc;
 use App\Models\User;
 use Filament\Schemas\Concerns\RestrictsFileUploadsToSchemaComponents;
 
@@ -54,4 +61,28 @@ it('keeps the upload field in a discovered schema rather than an action modal', 
     // field is addressable here is what catches a move back into the modal.
     expect(livewire(MyDrive::class)->instance()->isFileUploadForSchemaComponent('uploadState'))
         ->toBeTrue();
+});
+
+it('locks down every admin resource page, not just the student ones', function () {
+    // No resource form currently hosts a FileUpload, so this is defence in depth.
+    // It is asserted anyway: the first person to add one should get the
+    // restriction for free rather than shipping an upload surface that silently
+    // accepts files aimed at any Livewire property.
+    $admin = User::factory()->admin()->create();
+
+    $this->actingAs($admin);
+
+    expect(livewire(ListPcs::class)->instance()->isFileUploadForSchemaComponent('anything'))
+        ->toBeFalse()
+        ->and(livewire(CreatePc::class)->instance()->isFileUploadForSchemaComponent('anything'))
+        ->toBeFalse()
+        ->and(livewire(EditPc::class, ['record' => Pc::factory()->create()->getKey()])
+            ->instance()->isFileUploadForSchemaComponent('anything'))->toBeFalse()
+        ->and(livewire(ListUsers::class)->instance()->isFileUploadForSchemaComponent('anything'))
+        ->toBeFalse();
+});
+
+it('keeps the restriction on the admin pages that do accept uploads', function () {
+    expect(StaffMessages::class)->toUseTrait(RestrictsFileUploadsToSchemaComponents::class)
+        ->and(AdminChatRoom::class)->toUseTrait(RestrictsFileUploadsToSchemaComponents::class);
 });

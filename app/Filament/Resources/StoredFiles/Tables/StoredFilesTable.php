@@ -18,7 +18,11 @@ class StoredFilesTable
         return $table
             ->columns([
                 IconColumn::make('is_folder')
-                    ->label('')
+                    // A folder icon in an unlabelled column is the only thing
+                    // telling a reader which rows they can open, so it gets both
+                    // an accessible name and a visible tooltip.
+                    ->label('Kind')
+                    ->tooltip(fn (StoredFile $record): string => $record->is_folder ? 'Folder' : 'File')
                     ->icon(fn (StoredFile $record) => $record->is_folder
                         ? Heroicon::Folder
                         : Heroicon::Document)

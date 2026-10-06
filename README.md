@@ -23,8 +23,6 @@ Further reading:
   system did
 - [`docs/migration/schema-mapping.md`](docs/migration/schema-mapping.md) - table and
   column mapping
-- [`docs/migration/feature-mapping.md`](docs/migration/feature-mapping.md) - feature
-  parity
 
 Two Filament panels: staff at `/admin`, students at `/student`.
 

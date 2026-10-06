@@ -2,8 +2,8 @@
 
 namespace App\Filament\Resources\StoredFiles\Pages;
 
+use App\Filament\Resources\Pages\ListRecords;
 use App\Filament\Resources\StoredFiles\StoredFileResource;
-use Filament\Resources\Pages\ListRecords;
 
 /**
  * Read-only. There is no create action here on purpose: files enter a drive

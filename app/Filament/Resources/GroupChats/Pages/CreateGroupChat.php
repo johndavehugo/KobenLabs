@@ -4,7 +4,7 @@ namespace App\Filament\Resources\GroupChats\Pages;
 
 use App\Enums\GroupRole;
 use App\Filament\Resources\GroupChats\GroupChatResource;
-use Filament\Resources\Pages\CreateRecord;
+use App\Filament\Resources\Pages\CreateRecord;
 
 class CreateGroupChat extends CreateRecord
 {

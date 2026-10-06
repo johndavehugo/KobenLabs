@@ -13,6 +13,7 @@ use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Concerns\RestrictsFileUploadsToSchemaComponents;
 use Filament\Schemas\Schema;
+use Livewire\Attributes\On;
 
 /**
  * Join the class that is currently running.
@@ -159,9 +160,22 @@ class JoinClass extends Page
                 ->label('Refresh')
                 ->icon('heroicon-m-arrow-path')
                 ->outlined()
-                // Polling is enough until Phase 5 wires the class-session
-                // broadcast to a subscribed channel.
+                // The page now also re-renders itself when a class starts or ends
+                // on the class-sessions channel, so this button is a manual
+                // fallback rather than the primary way to see a new class.
                 ->action(fn () => null),
         ];
+    }
+
+    /**
+     * A class starting is the one thing a student cannot cause themselves and the
+     * one thing they are waiting for, so it is worth a push instead of a reload.
+     * Without this the Join button only appears after the student hits Refresh.
+     */
+    #[On('koben:class-session-started')]
+    #[On('koben:class-session-ended')]
+    public function refreshRunningClass(): void
+    {
+        $this->dispatch('$refresh');
     }
 }
