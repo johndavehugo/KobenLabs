@@ -7,8 +7,6 @@ use App\Models\AuditLog;
 use App\Models\ClassSession;
 use App\Models\GroupChat;
 use App\Models\GroupChatMessage;
-use App\Models\Message;
-use App\Models\MessageAttachment;
 use App\Models\Pc;
 use App\Models\PcSession;
 use App\Models\Schedule;
@@ -294,60 +292,6 @@ it('stops staff reorganising a drive that is not theirs', function () {
 
     expect($owner->can('reorganise', $file))->toBeTrue()
         ->and(User::factory()->admin()->create()->can('reorganise', $file))->toBeFalse();
-});
-
-/*
-|--------------------------------------------------------------------------
-| Messages — closes a legacy hole: no recipient check on view
-|--------------------------------------------------------------------------
-*/
-
-it('shows a message only to its sender and recipients, administrators included', function () {
-    $sender = User::factory()->teacher()->create();
-    $recipient = User::factory()->student()->create();
-    $stranger = User::factory()->student()->create();
-
-    $message = Message::factory()->for($sender, 'sender')->create();
-    $message->sendTo([$recipient->id]);
-
-    expect($sender->can('view', $message))->toBeTrue()
-        ->and($recipient->can('view', $message))->toBeTrue()
-        ->and($stranger->can('view', $message))->toBeFalse()
-        ->and(User::factory()->admin()->create()->can('view', $message))->toBeFalse();
-});
-
-it('lets only staff originate a message', function () {
-    $message = Message::factory()->create();
-
-    foreach (['student' => false, 'teacher' => true, 'admin' => true] as $role => $expected) {
-        $actor = User::factory()->{$role}()->create();
-
-        expect($actor->can('create', [Message::class]))->toBe($expected, "create as {$role}")
-            ->and($actor->can('broadcast', $message))->toBe($expected, "broadcast as {$role}");
-    }
-});
-
-it('lets only the sender delete a message', function () {
-    $sender = User::factory()->teacher()->create();
-    $message = Message::factory()->for($sender, 'sender')->create();
-
-    expect($sender->can('delete', $message))->toBeTrue()
-        ->and(User::factory()->teacher()->create()->can('delete', $message))->toBeFalse();
-});
-
-it('gates an attachment on its parent message', function () {
-    $sender = User::factory()->teacher()->create();
-    $recipient = User::factory()->student()->create();
-    $stranger = User::factory()->student()->create();
-
-    $message = Message::factory()->for($sender, 'sender')->create();
-    $message->sendTo([$recipient->id]);
-    $attachment = MessageAttachment::factory()->for($message)->create();
-
-    expect($sender->can('view', $attachment))->toBeTrue()
-        ->and($recipient->can('view', $attachment))->toBeTrue()
-        ->and($stranger->can('view', $attachment))->toBeFalse()
-        ->and($stranger->can('delete', $attachment))->toBeFalse();
 });
 
 /*

@@ -4,10 +4,8 @@ namespace App\Filament\Student\Widgets;
 
 use App\Filament\Student\Pages\ChatRoom;
 use App\Filament\Student\Pages\JoinClass;
-use App\Filament\Student\Pages\Messages as StudentMessages;
 use App\Filament\Student\Pages\MyAttendance;
 use App\Filament\Student\Pages\MyDrive;
-use App\Models\Message;
 use App\Models\StoredFile;
 use App\Models\User;
 use App\Support\Bytes;
@@ -99,24 +97,25 @@ class StudentWelcome extends Widget
     {
         return [
             ['label' => 'Join class', 'url' => JoinClass::getUrl(panel: 'student'), 'icon' => 'heroicon-o-academic-cap'],
-            ['label' => 'My Drive', 'url' => MyDrive::getUrl(panel: 'student'), 'icon' => 'heroicon-o-folder'],
-            ['label' => 'Messages', 'url' => StudentMessages::getUrl(panel: 'student'), 'icon' => 'heroicon-o-envelope'],
             ['label' => 'Group Chat', 'url' => ChatRoom::getUrl(panel: 'student'), 'icon' => 'heroicon-o-chat-bubble-left-right'],
+            ['label' => 'My Drive', 'url' => MyDrive::getUrl(panel: 'student'), 'icon' => 'heroicon-o-folder'],
             ['label' => 'My Attendance', 'url' => MyAttendance::getUrl(panel: 'student'), 'icon' => 'heroicon-o-calendar-days'],
         ];
     }
 
     /**
-     * Files and messages merged, newest first.
+     * The student's own uploads, newest first.
      *
-     * Two sources of the same kind of thing, so they belong in one list. Bounded
-     * per source so a busy drive cannot crowd out the messages entirely.
+     * Was files merged with direct messages. Messages are gone, so this is one source
+     * again — and there is nothing to merge it with, which is the point: a dashboard that
+     * showed recent messages from teachers sat one click away from showing everything
+     * else a student had received, on a machine that may be shared.
      *
      * @return Collection<int, array{description: string}>
      */
     private function recentActivity(User $user, int $limit = 8): Collection
     {
-        $files = $user->files()
+        return $user->files()
             ->files()
             ->latest('created_at')
             ->limit($limit)
@@ -126,24 +125,7 @@ class StudentWelcome extends Widget
                 'label' => $file->name,
                 'detail' => Bytes::format((int) $file->size).' uploaded',
                 'when' => $file->created_at,
-            ]);
-
-        $messages = Message::query()
-            ->visibleTo($user)
-            ->with('sender')
-            ->latest('created_at')
-            ->limit($limit)
-            ->get()
-            ->map(fn (Message $message): array => [
-                'kind' => 'message',
-                'label' => (string) $message->subject,
-                // Never the body: this list is rendered on a page that may be left
-                // on a shared lab machine.
-                'detail' => 'From '.($message->sender?->full_name ?? 'a deleted account'),
-                'when' => $message->created_at,
-            ]);
-
-        return $files->concat($messages)
+            ])
             ->sortByDesc('when')
             ->take($limit)
             ->values();

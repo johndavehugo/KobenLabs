@@ -2,7 +2,6 @@
 
 use App\Enums\PcStatus;
 use App\Filament\Student\Pages\ChatRoom as StudentChatRoom;
-use App\Filament\Student\Pages\Messages as StudentMessages;
 use App\Filament\Student\Pages\MyDrive;
 use App\Filament\Student\Widgets\StudentWelcome;
 use App\Filament\Widgets\LabOverview;
@@ -56,12 +55,6 @@ it('describes the drive preview image rather than leaving it unnamed', function 
     expect($html)->toContain('Preview of diagram.png');
 });
 
-it('names the read state column in the student inbox', function () {
-    $html = livewire(StudentMessages::class)->html();
-
-    expect($html)->toContain('Status');
-});
-
 it('gives the chat transcript real landmarks and headings', function () {
     $group = GroupChat::factory()->withMembers($this->student)->create();
 
@@ -69,10 +62,14 @@ it('gives the chat transcript real landmarks and headings', function () {
         ->set('groupId', $group->id)
         ->html();
 
-    // Sections are landmarked regions; a heading per section is what lets a
-    // keyboard or screen reader user jump between them.
-    expect($html)->toContain('Group')
-        ->and($html)->toContain('Transcript');
+    // The transcript is a live region, so a message arriving is announced without
+    // moving focus out of the composer. The roster is a complementary landmark beside
+    // it, and both carry headings so a keyboard or screen reader user can jump
+    // between the parts of the page.
+    expect($html)->toContain('role="log"')
+        ->toContain('aria-live="polite"')
+        ->toContain('Members')
+        ->toContain('<aside');
 });
 
 it('marks decorative icons as hidden from assistive technology', function () {

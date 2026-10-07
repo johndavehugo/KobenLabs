@@ -2,10 +2,9 @@
 
 namespace App\Filament\Student\Widgets;
 
+use App\Filament\Student\Pages\ChatRoom as StudentChatRoom;
 use App\Filament\Student\Pages\JoinClass;
-use App\Filament\Student\Pages\Messages as StudentMessages;
 use App\Models\ClassSession;
-use App\Models\Message;
 use App\Models\User;
 use App\Services\ClassSessionService;
 use Filament\Widgets\StatsOverviewWidget;
@@ -34,14 +33,14 @@ class StudentStatus extends StatsOverviewWidget
     {
         $user = $this->user();
         $session = app(ClassSessionService::class)->active();
-        $unread = $this->unreadCount($user);
+        $groups = $this->groupCount($user);
 
         return [
-            Stat::make('Unread messages', $unread)
-                ->description($unread === 1 ? '1 waiting' : $unread.' waiting')
-                ->descriptionIcon('heroicon-m-envelope')
-                ->color($unread > 0 ? 'warning' : 'gray')
-                ->url(StudentMessages::getUrl(panel: 'student')),
+            Stat::make('Group chats', $groups)
+                ->description($groups === 1 ? '1 joined' : $groups.' joined')
+                ->descriptionIcon('heroicon-m-chat-bubble-left-right')
+                ->color($groups > 0 ? 'success' : 'gray')
+                ->url(StudentChatRoom::getUrl(panel: 'student')),
 
             Stat::make(
                 $session === null ? 'No class running' : 'A class is running',
@@ -71,15 +70,16 @@ class StudentStatus extends StatsOverviewWidget
     }
 
     /**
-     * Same predicate as the inbox, via the model's scope, so the badge and the
-     * list cannot disagree.
+     * How many group chats this student is in.
+     *
+     * Replaced the unread-message badge. Group chat has no equivalent of an unread
+     * count — `group_message_reads` exists but nothing surfaces it, and a per-message
+     * read receipt in a room that is meant to be visible to everyone is close to
+     * meaningless. What a student actually wants to know is which rooms they are in.
      */
-    private function unreadCount(User $user): int
+    private function groupCount(User $user): int
     {
-        return Message::query()
-            ->visibleTo($user)
-            ->unreadBy($user)
-            ->count();
+        return $user->groupChats()->where('is_active', true)->count();
     }
 
     /**

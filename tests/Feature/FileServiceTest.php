@@ -1,8 +1,6 @@
 <?php
 
 use App\Models\GroupChat;
-use App\Models\Message;
-use App\Models\MessageAttachment;
 use App\Models\StoredFile;
 use App\Models\User;
 use App\Services\FileService;
@@ -110,19 +108,6 @@ it('rejects an upload that would exceed the quota', function () {
     exhaustQuota($this->user, 1);
 
     $this->service->store(upload('a.txt', 'x'), $this->user);
-})->throws(ValidationException::class, 'storage quota');
-
-it('counts message attachments against the quota', function () {
-    $this->actingAs($this->user);
-    exhaustQuota($this->user, 1);
-
-    // Legacy never counted these, so a user could fill the disk through message
-    // attachments while appearing to sit well under quota.
-    $this->service->storeMessageAttachment(
-        upload('a.txt', 'x'),
-        $this->user,
-        Message::factory()->create()->id,
-    );
 })->throws(ValidationException::class, 'storage quota');
 
 it('counts group chat files against the quota', function () {
@@ -260,36 +245,3 @@ it('allows different folder names side by side', function () {
     expect($a->parent_id)->toBeNull()
         ->and($b->parent_id)->toBeNull();
 });
-
-// -----------------------------------------------------------------
-// Message attachments
-// -----------------------------------------------------------------
-
-it('stores a message attachment with its original filename', function () {
-    $message = Message::factory()->create();
-
-    $attachment = $this->service->storeMessageAttachment(
-        upload('diagram.png', 'fake'),
-        $this->user,
-        $message->id,
-    );
-
-    // Legacy omitted the NOT NULL original_filename column, so this insert
-    // always threw and the feature was dead.
-    expect($attachment->original_name)->toBe('diagram.png')
-        ->and($attachment->path)->toStartWith('messages/'.$message->id.'/')
-        ->and($attachment->message_id)->toBe($message->id)
-        ->and(MessageAttachment::query()->count())->toBe(1);
-
-    Storage::disk('local')->assertExists($attachment->path);
-});
-
-it('rejects an oversized message attachment', function () {
-    config()->set('lab.messages.max_attachment_kilobytes', 2); // 2 KB
-
-    $this->service->storeMessageAttachment(
-        upload('big.txt', str_repeat('a', 8192)),
-        $this->user,
-        Message::factory()->create()->id,
-    );
-})->throws(ValidationException::class, 'exceeds');

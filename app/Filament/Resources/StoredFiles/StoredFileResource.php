@@ -30,7 +30,7 @@ class StoredFileResource extends Resource
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedFolder;
 
-    protected static string|BackedEnum|UnitEnum|null $navigationGroup = 'Lab';
+    protected static string|BackedEnum|UnitEnum|null $navigationGroup = 'Laboratory';
 
     protected static ?int $navigationSort = 1;
 

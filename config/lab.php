@@ -3,6 +3,7 @@
 use App\Models\ClassSession;
 use App\Models\GroupChat;
 use App\Models\Pc;
+use App\Models\PcClient;
 use App\Models\Schedule;
 use App\Models\StoredFile;
 use App\Models\User;
@@ -108,15 +109,79 @@ return [
         'max_message_length' => (int) env('LAB_GROUP_MESSAGE_MAX', 2000),
         'max_files_per_message' => 5,
         'messages_per_page' => 50,
-    ],
 
-    'messages' => [
-        'max_attachment_kilobytes' => (int) env('LAB_MESSAGE_ATTACHMENT_MAX_KB', 50 * 1024),
-        'per_page' => 25,
+        // How long a typing indicator stays lit after the last keystroke. Without a decay
+        // the label would stick indefinitely if someone were removed from the group
+        // mid-sentence, or their browser simply went away.
+        'typing_expires_after_seconds' => (int) env('LAB_GROUP_TYPING_TTL', 6),
     ],
 
     'attendance' => [
         'history_per_page' => 25,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Live Screens
+    |--------------------------------------------------------------------------
+    |
+    | The Lab Client is the background service on each lab PC that puts a picture
+    | of its screen on the staff Live Screens page.
+    |
+    | Legacy streamed 20 fps at 1280px over an unauthenticated WebSocket relay that
+    | every teacher connected to. At that rate a 40-PC lab pushed 520-960 Mbps
+    | inbound *before* the relay fanned each frame out again. The defaults below are
+    | roughly twenty times cheaper, which is the difference between this working at
+    | realistic lab size and not.
+    |
+    */
+
+    'monitoring' => [
+        // Master switch. When false the frame endpoint refuses every client, which
+        // is the off switch if this needs disabling without uninstalling the client
+        // from each machine.
+        'enabled' => (bool) env('LAB_MONITORING_ENABLED', true),
+
+        /*
+         * How often a client uploads a frame. The server is the authority: it
+         * returns the effective interval in the X-Frame-Interval response header,
+         * so changing this here retunes every enrolled client without touching
+         * them. 1 fps is the grid's needs — a teacher is not watching 40 streams
+         * for their fine detail, they are watching one.
+         */
+        'interval_seconds' => (float) env('LAB_MONITORING_INTERVAL', 1.0),
+
+        // Capture width. Height follows the aspect ratio. 1280 matches legacy's
+        // tuned value; dropping to 640 roughly halves bandwidth again and is the
+        // first thing to try on an older network.
+        'max_width' => (int) env('LAB_MONITORING_WIDTH', 1280),
+
+        // 60 was legacy's tuned value for legible text. Raise to 80 for sharper
+        // output at roughly 5ms/frame more CPU on the lab PC.
+        'jpeg_quality' => (int) env('LAB_MONITORING_QUALITY', 60),
+
+        // Frames are posted as a raw body, not a multipart upload, so this is a
+        // body-size ceiling rather than a FileService upload rule. 512 KB is
+        // roughly 5x a 1280px q60 frame, leaving room without inviting abuse.
+        'frame_max_kilobytes' => (int) env('LAB_MONITORING_FRAME_MAX_KB', 512),
+
+        /*
+         * A client that has not checked in within this window is treated as
+         * silent. Separate from lab.pcs.stale_after_minutes on purpose: that
+         * answers "is anyone using this machine", this answers "is the client
+         * running". A client on an idle PC is working correctly.
+         */
+        'client_silent_after_seconds' => (int) env('LAB_MONITORING_CLIENT_SILENT', 30),
+
+        /*
+         * A stored frame older than this is not shown. Without this a PC that
+         * stopped uploading would display its last image indefinitely, reading as
+         * live when nothing has happened for an hour.
+         */
+        'frame_stale_after_seconds' => (int) env('LAB_MONITORING_FRAME_STALE', 15),
+
+        // Record who viewed which PC, and when. Metadata only — never frame bytes.
+        'audit' => (bool) env('LAB_MONITORING_AUDIT', true),
     ],
 
     'audit' => [
@@ -135,6 +200,7 @@ return [
         'models' => [
             User::class,
             Pc::class,
+            PcClient::class,
             Schedule::class,
             ClassSession::class,
             YearSection::class,
@@ -142,9 +208,17 @@ return [
             GroupChat::class,
         ],
 
-        // Attributes that must never reach audit_logs. Password hashes are the
-        // important one: an audit trail is readable by staff.
-        'redact' => ['password', 'remember_token', 'secret', 'token'],
+        /*
+         * Attributes that must never reach audit_logs. Password hashes are the
+         * important one: an audit trail is readable by staff.
+         *
+         * `token_hash` is listed by its real column name, not as `token`. Redaction
+         * is an exact array_key_exists match, not a substring one, so listing `token`
+         * alone would silently leave the Lab Client's credential digest in a table
+         * any staff member can read — and a digest that lands in an export or a
+         * backup is a credential that has to be rotated.
+         */
+        'redact' => ['password', 'remember_token', 'secret', 'token', 'token_hash'],
     ],
 
 ];

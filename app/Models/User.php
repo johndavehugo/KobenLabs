@@ -110,23 +110,15 @@ class User extends Authenticatable implements FilamentUser, HasName
         return $this->hasMany(PcSession::class, 'terminated_by_id');
     }
 
-    public function sentMessages(): HasMany
-    {
-        return $this->hasMany(Message::class, 'sender_id');
-    }
-
-    public function receivedMessages(): BelongsToMany
-    {
-        return $this->belongsToMany(Message::class, 'message_recipients')
-            ->withPivot('read_at')
-            ->withTimestamps();
-    }
-
-    public function unreadMessages(): BelongsToMany
-    {
-        return $this->receivedMessages()->wherePivotNull('read_at');
-    }
-
+    /**
+     * Group chats this user created.
+     *
+     * The only kind of conversation that exists. Direct messaging was removed: a teacher
+     * sharing a screenshot or a block of code with a class mid-lesson needs a room that
+     * everybody can see, not thirty inboxes to open one at a time - and one-to-one
+     * teacher-to-student threads were the thing that made a lesson feel like surveillance
+     * rather than support.
+     */
     public function createdGroupChats(): HasMany
     {
         return $this->hasMany(GroupChat::class, 'created_by_id');

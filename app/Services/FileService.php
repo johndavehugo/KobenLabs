@@ -5,7 +5,6 @@ namespace App\Services;
 use App\Enums\GroupMessageType;
 use App\Models\GroupChat;
 use App\Models\GroupChatMessage;
-use App\Models\MessageAttachment;
 use App\Models\StoredFile;
 use App\Models\User;
 use App\Support\Bytes;
@@ -28,6 +27,8 @@ use ZipArchive;
  *   - user files: 50 MB, and `ALLOWED_EXTENSIONS` plus a 30-entry MIME list were
  *     declared and never invoked — no type restriction at all
  *   - message attachments: 50 MB, explicit comment "allow all file types"
+ *     (that zone is gone — direct messaging was removed; recorded here because it is
+ *     the reason the group chat list is now the strict one)
  *   - group chat files: 10 MB, the only real allowlist, and it checked
  *     `$_FILES['type']`, which is client-supplied and trivially spoofed
  *
@@ -413,41 +414,8 @@ class FileService
     }
 
     // -----------------------------------------------------------------
-    // Message and group chat attachments
+    // Group chat attachments
     // -----------------------------------------------------------------
-
-    /**
-     * Store an attachment for a direct message.
-     *
-     * Previously `Message::addAttachment()` omitted the NOT NULL
-     * `original_filename` column, so the insert always failed — the feature was
-     * never exercised. Quota is now checked here too, which legacy did not do.
-     */
-    public function storeMessageAttachment(UploadedFile $file, User $user, int $messageId): MessageAttachment
-    {
-        $maxKilobytes = (int) config('lab.messages.max_attachment_kilobytes');
-
-        if ($file->getSize() > $maxKilobytes * 1024) {
-            throw ValidationException::withMessages([
-                'file' => 'That attachment exceeds the '.intdiv($maxKilobytes, 1024).' MB limit.',
-            ]);
-        }
-
-        $this->assertAllowed($file);
-        $this->assertWithinQuota($user, $file->getSize());
-
-        $relativePath = sprintf('messages/%d/%s', $messageId, Str::uuid7().'.'.strtolower($file->getClientOriginalExtension()));
-
-        $this->disk()->put($relativePath, (string) file_get_contents($file->getRealPath()));
-
-        return MessageAttachment::query()->create([
-            'message_id' => $messageId,
-            'original_name' => $this->displayName($file->getClientOriginalName()),
-            'path' => $relativePath,
-            'size' => $file->getSize(),
-            'mime_type' => $this->sniffMimeType($file),
-        ]);
-    }
 
     /**
      * Store a group chat attachment.

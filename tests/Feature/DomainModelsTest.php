@@ -13,8 +13,6 @@ use App\Models\AuditLog;
 use App\Models\ClassSession;
 use App\Models\GroupChat;
 use App\Models\GroupChatMessage;
-use App\Models\Message;
-use App\Models\MessageAttachment;
 use App\Models\Pc;
 use App\Models\PcSession;
 use App\Models\Schedule;
@@ -253,28 +251,6 @@ it('recomputes the storage counter from the file tree', function () {
 
     expect((float) $user->refresh()->storage_used_mb)->toBe(5.0)
         ->and($user->storageRemainingBytes())->toBe($user->storageQuotaBytes() - 5 * 1024 * 1024);
-});
-
-it('tracks message read state through the recipient pivot', function () {
-    $message = Message::factory()->create();
-    $recipient = User::factory()->student()->create();
-
-    $message->sendTo([$recipient->id]);
-
-    expect($recipient->unreadMessages()->count())->toBe(1);
-
-    $message->markReadBy($recipient);
-
-    expect($recipient->unreadMessages()->count())->toBe(0)
-        ->and($recipient->receivedMessages()->count())->toBe(1);
-});
-
-it('exposes message attachments', function () {
-    $message = Message::factory()->create();
-    MessageAttachment::factory()->for($message)->create();
-
-    expect($message->attachments)->toHaveCount(1)
-        ->and($message->attachments->first()->original_name)->toEndWith('.pdf');
 });
 
 it('manages group membership with a group scoped role', function () {

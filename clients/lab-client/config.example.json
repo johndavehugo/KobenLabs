@@ -1,0 +1,12 @@
+{
+  "_comment": "Copy to config.json and fill in. install-service.ps1 writes this for you. The token comes from: php artisan pcs:enrol-client \"LAB-01\"",
+
+  "server_url": "https://kobenlabs.test",
+  "token": "paste-the-token-here",
+
+  "_comment_capture": "These are only the initial values. The server overrides them from config/lab.php on every /api/client/config fetch, so changing the capture rate in Laravel retunes the whole lab without touching a single machine.",
+
+  "max_width": 1280,
+  "quality": 60,
+  "interval_seconds": 1.0
+}

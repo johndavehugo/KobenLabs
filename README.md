@@ -1,4 +1,4 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+﻿<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
 
 <p align="center">
 <a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
@@ -12,8 +12,11 @@
 A computer-lab management system built on Laravel and Filament, replacing the legacy
 PHP/PDO application.
 
-**New machine? Start here -> [`docs/setup.md`](docs/setup.md)** - prerequisites,
-database, install, creating the first admin, and a click-through walkthrough.
+**New machine? Start here -> [`docs/installation.md`](docs/installation.md)** - from
+nothing installed to a working system, one step at a time.
+
+[`docs/reference.md`](docs/reference.md) is the reference version: every setting explained, for
+when you need a detail rather than the path through.
 
 Further reading:
 
@@ -25,6 +28,15 @@ Further reading:
   column mapping
 
 Two Filament panels: staff at `/admin`, students at `/student`.
+
+What it does: PC inventory and presence, class sessions with an attendance roster,
+schedules, per-student file drives, group chat, an audit trail, and
+**Live Screens** - a background client on each lab PC reporting its screen to a staff
+page. Live Screens is optional and off the critical path; see
+[`docs/reference.md` section 8b](docs/reference.md#8b-live-screens-optional).
+
+The lab client lives in [`clients/lab-client/`](clients/lab-client/) and is deployed
+per machine, not through Composer or npm.
 
 ---
 ## About Laravel

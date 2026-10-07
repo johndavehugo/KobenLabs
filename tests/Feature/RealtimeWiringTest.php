@@ -110,15 +110,34 @@ describe('realtime wiring', function (): void {
 
             $html = $response->getContent();
 
-            // Matched on the built asset name, not the word "echo": Filament ships its
+            // Matched on our own module, not the bare word "echo". Filament ships its
             // own /js/filament/filament/echo.js core asset, which appears first and
             // would satisfy a loose substring check while this module was absent.
-            expect($html)->toMatch('#build/assets/echo-[^"]+\.js#');
+            //
+            // Deliberately not matched on `/build/assets/`: when `npm run dev` is up,
+            // @vite emits dev-server URLs (http://host:5173/resources/js/echo.js)
+            // instead of hashed build assets. A path-shaped assertion therefore reports
+            // a working panel as broken, or vice versa, depending on whether someone
+            // happens to have a dev server running.
+            // Scoped to our own module by path. Filament ships its own
+            // /js/filament/filament/echo.js earlier in the document, and a looser
+            // pattern would match that and silently assert on Filament's asset
+            // instead of ours — passing whether or not this module was ever emitted.
+            //
+            // Both Vite URL forms are accepted because `npm run dev` swaps hashed
+            // build assets for dev-server URLs via a public/hot file. A path-shaped
+            // assertion would otherwise report a working panel as broken whenever a
+            // dev server happened to be running.
+            expect($html)->toMatch('#(?:build/assets/echo-[^"]*\.js|resources/js/echo\.js)#');
 
             // The listener must come after the block that constructs window.Echo. If
-            // it loaded first it would find no Echo and silently subscribe to nothing.
-            expect(strpos($html, 'build/assets/echo-'))
-                ->toBeGreaterThan(strpos($html, 'EchoFactory'));
+            // it loaded first it would find no Echo and silently subscribe to nothing —
+            // a failure with no visible symptom, which is why it is pinned here.
+            $ourEcho = preg_match('#(?:build/assets/echo-[^"]*\.js|resources/js/echo\.js)#', $html, $m)
+                ? strpos($html, $m[0])
+                : -1;
+
+            expect($ourEcho)->toBeGreaterThan(strpos($html, 'EchoFactory'));
         }
     });
 });

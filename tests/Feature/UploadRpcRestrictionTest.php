@@ -1,7 +1,6 @@
 <?php
 
 use App\Filament\Pages\ChatRoom as AdminChatRoom;
-use App\Filament\Pages\Messages as StaffMessages;
 use App\Filament\Resources\Pcs\Pages\CreatePc;
 use App\Filament\Resources\Pcs\Pages\EditPc;
 use App\Filament\Resources\Pcs\Pages\ListPcs;
@@ -83,6 +82,5 @@ it('locks down every admin resource page, not just the student ones', function (
 });
 
 it('keeps the restriction on the admin pages that do accept uploads', function () {
-    expect(StaffMessages::class)->toUseTrait(RestrictsFileUploadsToSchemaComponents::class)
-        ->and(AdminChatRoom::class)->toUseTrait(RestrictsFileUploadsToSchemaComponents::class);
+    expect(AdminChatRoom::class)->toUseTrait(RestrictsFileUploadsToSchemaComponents::class);
 });

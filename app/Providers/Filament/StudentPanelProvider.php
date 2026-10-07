@@ -11,7 +11,6 @@ use Filament\Pages\Dashboard;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
-use Filament\View\PanelsRenderHook;
 use Filament\Widgets\AccountWidget;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
@@ -55,10 +54,9 @@ class StudentPanelProvider extends PanelProvider
             ->widgets([
                 AccountWidget::class,
             ])
-            ->renderHook(
-                PanelsRenderHook::SCRIPTS_AFTER,
-                fn (): string => view('filament.echo-listeners')->render(),
-            )
+            // Panel scripts are registered once in AppServiceProvider, not here — see
+            // registerPanelScripts() for why a per-panel renderHook() leaks onto the
+            // other panel.
             ->middleware([
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,

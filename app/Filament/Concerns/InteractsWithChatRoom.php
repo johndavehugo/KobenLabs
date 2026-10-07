@@ -81,15 +81,25 @@ trait InteractsWithChatRoom
     {
         $user = $this->user();
 
+        // A staff member's list is the groups they created; a student's is the ones they
+        // joined with a code.
+        //
+        // Staff used to see every active group in the lab, which is the wrong shape for
+        // this system: a teacher's group is a private room for one class, named and
+        // described by whoever made it. Handing every teacher every other teacher's room
+        // puts conversations in front of people who have no part in them, and makes the
+        // sidebar a list of other people's classes rather than your own.
         return GroupChat::query()
             ->active()
             ->when(
-                ! $user->canManageLab(),
+                $user->canManageLab(),
+                fn ($query) => $query->where('created_by_id', $user->id),
                 fn ($query) => $query->whereHas(
                     'members',
                     fn ($members) => $members->whereKey($user->id),
                 ),
             )
+            ->withUnreadCountFor($user)
             ->with('creator')
             ->orderBy('name')
             ->get();
@@ -136,6 +146,16 @@ trait InteractsWithChatRoom
     public function mountInteractsWithChatRoom(): void
     {
         $this->ensureGroupIsReadable();
+
+        // groupId is a Url property, so a group can be opened straight from a link
+        // (`?group=3`) without ever going through selectGroup(). That is a page load of the
+        // conversation, so it counts as reading it - without this the badge survives a
+        // refresh of the group you are looking at.
+        $group = $this->currentGroup();
+
+        if ($group !== null) {
+            $group->markAllReadBy($this->user());
+        }
     }
 
     /**
@@ -386,6 +406,15 @@ trait InteractsWithChatRoom
 
                 $this->groupId = $group->id;
 
+                // Announced in the room itself, not only in the joiner's own notification.
+                //
+                // Someone handing a code round a classroom has no other way to know who
+                // actually made it in, and a member list that quietly gains a row gives no
+                // clue whether the person who left the room is the person who typed the
+                // code. The transcript is the record.
+                $announcement = $group->systemMessage($this->user()->full_name.' joined the group.');
+                $this->announce($announcement, $group);
+
                 Notification::make()
                     ->success()
                     ->title("Joined {$group->name}")
@@ -411,33 +440,15 @@ trait InteractsWithChatRoom
 
                 $group->leave($this->user());
 
+                // Posted before the membership row goes, so the announcement is still made
+                // by someone who is in the room - GroupChatMessagePolicy defers to the
+                // group policy, and a leaver can no longer see it.
+                $announcement = $group->systemMessage($this->user()->full_name.' left the group.');
+                $this->announce($announcement, $group);
+
                 $this->groupId = null;
 
                 Notification::make()->success()->title('You have left the group')->send();
-            });
-    }
-
-    public function markGroupReadAction(): Action
-    {
-        return Action::make('markGroupRead')
-            ->label('Mark all read')
-            ->icon(Heroicon::Check)
-            ->color('gray')
-            ->visible(fn (): bool => $this->currentGroup() !== null)
-            ->action(function () {
-                $group = $this->currentGroup();
-
-                if ($group === null) {
-                    return;
-                }
-
-                $group->chatMessages()
-                    ->whereNull('sender_id')
-                    ->orWhere('sender_id', '!=', $this->user()->id)
-                    ->get()
-                    ->each(fn (GroupChatMessage $message) => $message->markReadBy($this->user()));
-
-                Notification::make()->success()->title('Marked as read')->send();
             });
     }
 

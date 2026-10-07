@@ -6,7 +6,7 @@ use App\Filament\Student\Widgets\StudentStatus;
 use App\Filament\Student\Widgets\StudentWelcome;
 use App\Filament\Widgets\LabOverview;
 use App\Filament\Widgets\PcStatusChart;
-use App\Models\Message;
+use App\Models\GroupChat;
 use App\Models\Pc;
 use App\Models\Schedule;
 use App\Models\StoredFile;
@@ -155,17 +155,17 @@ it('warns as the quota runs out', function () {
         ->assertSee('0 B');
 });
 
-it('counts unread messages with the same predicate as the inbox', function () {
-    $message = Message::factory()->create();
-    $message->sendTo([$this->student->id]);
+it('counts the group chats a student has joined', function () {
+    $this->actingAs($this->student);
+
+    livewire(StudentStatus::class)->assertSee('0 joined');
+
+    $group = GroupChat::factory()->create();
+    $group->join($this->student);
 
     $this->actingAs($this->student);
 
-    livewire(StudentStatus::class)->assertSee('1 waiting');
-
-    $message->markReadBy($this->student);
-
-    livewire(StudentStatus::class)->assertSee('Nothing to join right now');
+    livewire(StudentStatus::class)->assertSee('1 joined');
 });
 
 it('tells a student whether a class is running and whether they joined', function () {
@@ -243,11 +243,12 @@ it('links to every student page from the dashboard', function () {
 
     $html = livewire(StudentWelcome::class)->html();
 
+    // No /student/messages: direct messaging was removed and group chat replaced it.
     expect($html)->toContain('/student/my-drive')
-        ->toContain('/student/messages')
         ->toContain('/student/group-chat')
         ->toContain('/student/my-attendance')
-        ->toContain('/student/join-class');
+        ->toContain('/student/join-class')
+        ->not->toContain('/student/messages');
 });
 
 it('shows a file in the recent activity list', function () {
@@ -259,20 +260,4 @@ it('shows a file in the recent activity list', function () {
     $this->actingAs($this->student);
 
     livewire(StudentWelcome::class)->assertSee('revision-notes.txt');
-});
-
-it('never shows a message body in the activity list', function () {
-    $message = Message::factory()->create([
-        'subject' => 'Confidential note',
-        'body' => 'Your grade is not what you expect',
-    ]);
-    $message->sendTo([$this->student->id]);
-
-    $this->actingAs($this->student);
-
-    // A dashboard can be left open on a shared lab machine, so the list carries a
-    // subject and a sender, never the body.
-    livewire(StudentWelcome::class)
-        ->assertSee('Confidential note')
-        ->assertDontSee('not what you expect');
 });

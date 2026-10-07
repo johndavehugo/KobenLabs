@@ -1,0 +1,38 @@
+/**
+ * Stylesheet for the Filament panels.
+ *
+ * This exists because the panels had no stylesheet of their own. `resources/css/app.css`
+ * is only referenced by welcome.blade.php, so every Tailwind utility class on every
+ * custom Filament page resolved to nothing: Live Screens rendered as an unstyled bulleted
+ * list next to a fully styled sidebar. Nothing threw, and nothing looked broken in the
+ * markup - the classes were simply never sent to the browser.
+ *
+ * Deliberately imports Tailwind's theme and utilities *without* preflight.
+ *
+ * Preflight is a global reset - it restyles headings, lists, buttons and form controls from
+ * scratch. Filament builds its own components on top of its own base styles, and dumping a
+ * second reset on top of a running panel is how a sidebar ends up looking like a different
+ * application. The panel needs utilities, not a reset: the utility layer is what supplies
+ * `grid`, `rounded-lg`, `border` and `truncate`, which is precisely the gap being closed.
+ *
+ * Layer order is declared before the imports so the utilities land above Filament's base
+ * rather than beneath it.
+ */
+@layer theme, base, components, utilities;
+
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css' layer(utilities);
+
+/**
+ * Tailwind scans source files for class names. Filament's own views and this app's
+ * resource views both need scanning for the utilities used in custom pages to exist at
+ * all. Vendor is left to Filament's stylesheet, which handles its own components.
+ */
+@source '../../resources/views/**/*.blade.php';
+@source '../../app/Filament/**/*.php';
+@source '../../app/Enums/*.php';
+
+@theme {
+    --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
+        'Segoe UI Symbol', 'Noto Color Emoji';
+}

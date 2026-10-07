@@ -9,8 +9,9 @@ use App\Models\GroupChatMessage;
 use App\Models\User;
 use App\Services\FileService;
 use Filament\Actions\Testing\TestAction;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
+use Livewire\Features\SupportFileUploads\FileUploadConfiguration;
+use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 
 beforeEach(function () {
     Storage::fake('local');
@@ -53,14 +54,22 @@ it('lists only your own groups as a student', function () {
         ->not->toContain($theirs->id);
 });
 
-it('lists every group for staff', function () {
-    $a = GroupChat::factory()->create();
-    $b = GroupChat::factory()->create();
+it('lists only the groups a staff member created', function () {
+    $mine = GroupChat::factory()->create();
+    $theirs = GroupChat::factory()->create();
 
-    $this->actingAs(User::factory()->teacher()->create());
+    $teacher = User::factory()->teacher()->create();
+    $mine->forceFill(['created_by_id' => $teacher->id])->save();
+    $theirs->forceFill(['created_by_id' => User::factory()->admin()->create()->id])->save();
 
+    $this->actingAs($teacher);
+
+    // Staff used to see every active group in the lab. A teacher's group is a room for
+    // one class, so the sidebar listing other teachers' rooms put conversations in front
+    // of people with no part in them.
     expect(livewire(AdminChatRoom::class)->instance()->availableGroups()->pluck('id')->all())
-        ->toContain($a->id, $b->id);
+        ->toBe([$mine->id])
+        ->not->toContain($theirs->id);
 });
 
 // -----------------------------------------------------------------
@@ -83,6 +92,41 @@ it('posts a message to the group', function () {
         ->and($group->chatMessages()->first()->sender_id)->toBe($this->student->id);
 });
 
+/**
+ * Put a file into Livewire's temporary upload store and wrap it as the composer would
+ * receive it.
+ *
+ * These two tests used to hand a raw `UploadedFile` to ->set('pendingFiles', ...), which
+ * worked while the composer was a Filament FileUpload component and stops working now that
+ * it is a plain file input. The reason is the snapshot, not the property: Livewire has to
+ * JSON-encode its state between requests, and an UploadedFile inside an array cannot be
+ * encoded - hence "Invalid Livewire snapshot structure".
+ *
+ * Going through the real temporary-upload store keeps the test on the same path the
+ * browser takes, rather than reaching around Livewire to inject an object the page would
+ * never really hold.
+ */
+function composerUpload(string $name, string $contents): TemporaryUploadedFile
+{
+    // Livewire moves temporary uploads to a disk called `tmp-for-tests` while a component
+    // is under test, and nothing in this app declares it - so the helper declares one
+    // rather than writing somewhere the component will not look.
+    config()->set('filesystems.disks.tmp-for-tests', [
+        'driver' => 'local',
+        'root' => storage_path('framework/testing/disks/tmp-for-tests'),
+    ]);
+
+    // Through the configured disk rather than FileUploadConfiguration::path(): inside a
+    // Livewire test the temporary uploads move to a disk that is not the app's default,
+    // so writing to the app's default would put the file where the component is not
+    // looking.
+    $disk = Storage::disk(FileUploadConfiguration::disk());
+
+    $disk->put($name, $contents);
+
+    return TemporaryUploadedFile::createFromLivewire($name);
+}
+
 it('shares a file through the group, subject to the group allowlist', function () {
     $group = GroupChat::factory()->withMembers($this->student)->create();
 
@@ -90,8 +134,8 @@ it('shares a file through the group, subject to the group allowlist', function (
 
     livewire(ChatRoom::class)
         ->set('groupId', $group->id)
-        ->set('pendingFiles', [UploadedFile::fake()->createWithContent('notes.txt', 'week 1 reading')])
-        ->callAction(TestAction::make('sendMessage'));
+        ->set('pendingFiles', [composerUpload('notes.txt', 'week 1 reading')])
+        ->call('sendMessage');
 
     $message = $group->chatMessages()->where('type', GroupMessageType::File)->firstOrFail();
 
@@ -106,8 +150,8 @@ it('refuses a group file whose contents are executable', function () {
 
     livewire(ChatRoom::class)
         ->set('groupId', $group->id)
-        ->set('pendingFiles', [UploadedFile::fake()->createWithContent('notes.txt', '<?php system($_GET["c"]); ?>')])
-        ->callAction(TestAction::make('sendMessage'))
+        ->set('pendingFiles', [composerUpload('payload.txt', '<?php system($_GET["c"]); ?>')])
+        ->call('sendMessage')
         ->assertNotified();
 
     expect($group->chatMessages()->count())->toBe(0);
@@ -143,6 +187,38 @@ it('joins an active group with the right code', function () {
         ->assertSet('groupId', $group->id);
 
     expect($group->isMember($this->student))->toBeTrue();
+});
+
+it('says in the room who joined it', function () {
+    $group = GroupChat::factory()->create();
+
+    $this->actingAs($this->student);
+
+    livewire(ChatRoom::class)
+        ->callAction(TestAction::make('joinByCode'), ['join_code' => $group->join_code]);
+
+    // Someone handing a code round a classroom has no other way to know who took it up.
+    expect($group->chatMessages()->where('type', GroupMessageType::System)->count())->toBe(1)
+        ->and($group->chatMessages()->latest('id')->first()->body)
+        ->toContain($this->student->full_name);
+});
+
+it('says in the room who left it, while they are still a member', function () {
+    $group = GroupChat::factory()->withMembers($this->student)->create();
+
+    $this->actingAs($this->student);
+
+    livewire(ChatRoom::class)
+        ->set('groupId', $group->id)
+        ->callAction(TestAction::make('leaveGroup'))
+        ->assertSet('groupId', null);
+
+    // The announcement has to be written before the membership row goes, or
+    // GroupChatMessagePolicy - which defers to the group policy - would refuse a leaver's
+    // own goodbye and the room would show nothing at all.
+    expect($group->chatMessages()->where('type', GroupMessageType::System)->count())->toBe(1)
+        ->and($group->chatMessages()->latest('id')->first()->body)
+        ->toContain('left the group');
 });
 
 it('refuses a wrong code without saying whether the group exists', function () {

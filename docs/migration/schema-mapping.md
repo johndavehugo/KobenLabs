@@ -48,16 +48,16 @@ Foreign keys force a dependency order. Recommended sequence:
 6. class_sessions
 7. attendance
 8. files
-9. messages
-10. message_recipients
-11. message_attachments
-12. group_chats
-13. group_chat_members
-14. group_chat_messages
-15. group_message_reads
-16. user_accessibility
-17. audit_logs
+9. group_chats
+10. group_chat_members
+11. group_chat_messages
+12. group_message_reads
+13. user_accessibility
+14. audit_logs
 ```
+
+> The legacy `messages`, `message_recipients` and `message_attachments` tables are
+> **deliberately not migrated.** See [`messages` and friends](#messages-and-friends) below.
 
 `system_config` and the legacy `migrations` table are **not migrated** — see their entries below.
 
@@ -281,51 +281,34 @@ Keep `uploads/` out of the stored path — with the `local` disk rooted at `stor
 
 ---
 
-## `messages`, `message_recipients`, `message_attachments`
+## `messages` and friends
 
-> **Decision first.** Legacy's admin and student "Messages" nav items both render **group chat**. The `messages` tables power a separate broadcast-mailbox feature that appears to have been abandoned. Verify with the original authors before building three more tables. See [README §7](./README.md#7-open-decisions).
+> **Decision: not migrated. This feature was dropped.**
 
-### `messages`
+Legacy's admin and student "Messages" nav items both render **group chat**. The `messages`
+tables power a separate broadcast-mailbox feature that appears to have been abandoned. The
+advice below was to check with the original authors before building three more tables; the
+answer was no, so `messages`, `message_recipients` and `message_attachments` were never
+created.
 
-| Legacy column | Target | Notes |
-|---|---|---|
-| `id` | `id` | |
-| `sender_id` | `sender_id` `unsignedBigInteger` | FK → `users`, cascade |
-| `subject` `varchar(200)` | `subject` `string(200)` | |
-| `content` `text` | `body` `text` | |
-| `is_broadcast` `boolean` default false | `is_broadcast` `boolean` default false | |
-| `parent_message_id` `int` NULL | `parent_id` `unsignedBigInteger` nullable | Self-FK for threads |
-| `created_at`, `updated_at` | same | |
+KobenLabs has **group chat only**. There are no direct messages: no mailbox, no
+staff-to-student broadcast, no per-recipient read state, no message attachments. Students
+reach a conversation by joining a group with its join code; staff create groups.
 
-### `message_recipients`
+Concretely, this meant:
 
-| Legacy column | Target | Notes |
-|---|---|---|
-| `id` | `id` | |
-| `message_id` | `message_id` | FK → `messages`, cascade |
-| `recipient_id` | `user_id` `unsignedBigInteger` | FK → `users`, cascade. Rename — `user_id` is clearer |
-| `is_read` `boolean` default false | `read_at` `timestamp` nullable | **Replace the boolean with a nullable timestamp.** The legacy table has both, and `is_read` is the redundant one |
-| `read_at` `timestamp` NULL | — | Merged above |
-| `created_at` | `created_at` | |
+- No `messages`, `message_recipients` or `message_attachments` tables.
+- No `Message` or `MessageAttachment` models, and no `MessageController`.
+- Attachments live on `group_chat_messages` instead (`file_path`, `file_name`,
+  `file_size`), so a file sent to a class is part of the conversation rather than a
+  separate deliverable.
+- Read state is per-group membership (`group_message_reads`), not per-recipient, because
+  every member of a group sees the same transcript.
 
-`UNIQUE(message_id, recipient_id)` must be preserved.
-
-### `message_attachments`
-
-| Legacy column | Target | Notes |
-|---|---|---|
-| `id` | `id` | |
-| `message_id` | `message_id` | FK → `messages`, cascade |
-| `filename` | — | **Drop.** Redundant with `original_name` |
-| `original_filename` | `original_name` `string(255)` | **Must be `NOT NULL`.** Legacy's insert omits it, guaranteeing an SQL error — the feature was never exercised |
-| `file_path` | `path` `string(500)` | |
-| `file_size` `bigint` | `size` `unsignedBigInteger` | Renamed for consistency with `files` |
-| `mime_type` | `mime_type` `string(100)` nullable | |
-| `created_at` | `created_at` | |
-
-Legacy enforces `is_broadcast === true` with a **strict** comparison, so a string `"true"` from the client silently fails. Use a boolean cast.
-
-**Add a download route.** Legacy has none — attachments can be listed but never retrieved.
+If this ever needs revisiting, the legacy shapes are recorded in the migration history for
+this file, along with the defects that would have needed fixing first — notably
+`message_attachments.original_filename`, which legacy inserts omit despite declaring
+`NOT NULL`, and the missing download route.
 
 ---
 
@@ -481,18 +464,9 @@ Column renames:
 | `users.last_login` | `users.last_login_at` | Laravel convention |
 | `pc_sessions.start_time` / `end_time` | `started_at` / `ended_at` | Laravel convention |
 | `class_sessions.started_by` | `class_sessions.started_by_id` | Laravel convention |
-| `messages.content` | `messages.body` | Consistency |
-| `message_recipients.recipient_id` | `message_recipients.user_id` | Consistency |
-| `message_recipients.is_read` + `read_at` | `read_at` | Dropped the redundant boolean |
 | `group_chat_messages.message` | `group_chat_messages.body` | Consistency |
 | `audit_logs.entity_type` / `entity_id` | `auditable_type` / `auditable_id` | Morph naming convention |
 | `audit_logs.details` | `audit_logs.properties` | JSON rather than text, so it is queryable |
-| `pcs.last_seen` | `pcs.last_seen_at` | Laravel convention |
-| `class_sessions.started_by` | `class_sessions.started_by_id` | Laravel convention |
-| `pc_sessions.start_time` / `end_time` | `started_at` / `ended_at` | Laravel convention |
-| `messages.content` | `messages.body` | Consistency |
-| `message_recipients.recipient_id` | `message_recipients.user_id` | Consistency |
-| `group_chat_messages.message` | `group_chat_messages.body` | Consistency |
 
 ---
 

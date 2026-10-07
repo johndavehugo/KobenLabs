@@ -26,6 +26,8 @@
  * mean every PC row re-rendered for one PC's status change, so listeners are
  * per-topic and each dispatches one narrow Livewire event.
  */
+import { readTypingContext } from './chat-typing.js'
+
 const topics = {
     'private-pcs': {
         '.pc.status.updated': 'koben:pc-status-updated',
@@ -39,6 +41,22 @@ const topics = {
 
 /** Group chat is per-group, and the group changes as the user picks a transcript. */
 const groupTopic = '.group-chat.message.sent'
+
+/** Typing is the same channel and the same per-group subscription as messages. */
+const typingTopic = '.group-chat.typing'
+
+/**
+ * Who is typing, by user id.
+ *
+ * A Map rather than a counter, because the server sends the author's name and the UI has
+ * to render "Maria is typing" from the event alone. Entries are dropped by a timer rather
+ * than by an explicit "stopped" event: a browser that is closed, loses connection or is
+ * navigated away mid-sentence never gets to say it stopped, so nothing that waits for that
+ * would ever clear.
+ *
+ * @type {Map<number, {name: string, timer: number}>}
+ */
+const typing = new Map()
 
 /** Channels already opened, so a re-run cannot stack duplicate subscriptions. */
 let joined = new Set()
@@ -65,6 +83,82 @@ export function listenForGroup(groupId) {
     echo.private(channel).listen(groupTopic, () => {
         window.Livewire.dispatch('koben:group-message-sent')
     })
+
+    echo.private(channel).listen(typingTopic, (payload) => {
+        // The author's own keystrokes come back to them. Echoing "you are typing" to the
+        // person typing is noise, and it is the one case where the indicator is actively
+        // unhelpful rather than merely redundant.
+        if (! payload || payload.user_id === window.kobenEcho?.userId?.()) {
+            return
+        }
+
+        showTyping(payload)
+    })
+}
+
+/**
+ * Render "X is typing" for a few seconds.
+ *
+ * The lifetime is decided here rather than by the server. A typing indicator with no
+ * expiry is worse than none: one dropped connection, or a tab closed mid-word, leaves a
+ * stale name sitting in the composer area for the rest of the lesson.
+ */
+function showTyping(payload) {
+    const indicator = document.querySelector('[data-typing-indicator]')
+
+    if (! indicator) {
+        return
+    }
+
+    const existing = typing.get(payload.user_id)
+
+    if (existing) {
+        window.clearTimeout(existing.timer)
+    }
+
+    const ttl = (window.kobenEcho?.typingTtlSeconds?.() ?? 6) * 1000
+
+    typing.set(payload.user_id, {
+        name: String(payload.user_name ?? 'Someone'),
+        timer: window.setTimeout(() => {
+            typing.delete(payload.user_id)
+            renderTyping()
+        }, ttl),
+    })
+
+    renderTyping()
+}
+
+/** Draw the current set of typists. */
+function renderTyping() {
+    const indicator = document.querySelector('[data-typing-indicator]')
+
+    if (! indicator) {
+        return
+    }
+
+    const names = [...typing.values()].map((entry) => entry.name)
+
+    if (names.length === 0) {
+        indicator.textContent = ''
+
+        return
+    }
+
+    // "Maria is typing", "Maria and Ana are typing", "Maria, Ana and 2 others are typing".
+    const head = names.slice(0, 2)
+
+    let text
+
+    if (names.length === 1) {
+        text = `${head[0]} is typing…`
+    } else if (names.length === 2) {
+        text = `${head[0]} and ${head[1]} are typing…`
+    } else {
+        text = `${head[0]}, ${head[1]} and ${names.length - 2} more are typing…`
+    }
+
+    indicator.textContent = text
 }
 
 /**
@@ -163,6 +257,8 @@ function boot() {
  * would trigger N Livewire refreshes, compounding with each page visited.
  */
 export function registerEchoListeners() {
+    readTypingContext()
+
     if (window.kobenEchoRegistered) {
         return
     }
@@ -192,5 +288,17 @@ export function registerEchoListeners() {
 registerEchoListeners()
 
 if (typeof window !== 'undefined') {
-    window.kobenEcho = { listenForGroup, syncGroupChannel }
+    window.kobenEcho = {
+        listenForGroup,
+        syncGroupChannel,
+
+        // The signed-in user's id, read from the page rather than sent by the server, so
+        // the browser can discard its own typing events without a round trip.
+        userId: () => window.kobenEchoUserId ?? null,
+
+        // How long a typing indicator survives without a further keystroke. From the
+        // server's config, so the decay is one number for the whole app rather than a
+        // second copy in JavaScript.
+        typingTtlSeconds: () => window.kobenTypingTtl ?? 6,
+    }
 }

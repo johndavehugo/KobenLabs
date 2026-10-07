@@ -47,6 +47,19 @@ Broadcast::channel('class-sessions', function (User $user) {
 });
 
 /*
+ * Live Screens presence signals.
+ *
+ * Staff only. This channel carries no image data at all — ScreenFrameAvailable
+ * announces a pc_id and the browser then fetches the frame over HTTP, through
+ * PcPolicy::viewScreen. Subscribing therefore reveals which PCs are live but nothing
+ * about what is on them, which is the same split the legacy relay got wrong: it
+ * treated "may connect" as "may receive every frame".
+ */
+Broadcast::channel('monitoring', function (User $user) {
+    return $user->canManageLab();
+});
+
+/*
  * Group chat transcripts.
  *
  * The group id is carried in the channel name, so the policy is asked about a real

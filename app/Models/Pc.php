@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 #[Fillable(['name', 'ip_address', 'mac_address', 'status', 'last_seen_at'])]
 class Pc extends Model
@@ -37,6 +38,21 @@ class Pc extends Model
     public function activeSessions(): HasMany
     {
         return $this->sessions()->where('status', PcSessionStatus::Active);
+    }
+
+    /**
+     * The enrolled Lab Client for this machine, if any.
+     *
+     * A hasOne rather than a morph or a through, because pc_clients.pc_id is unique —
+     * a machine either has the client running or it does not, and re-enrolling
+     * replaces the row.
+     *
+     * Note this is about the *service*, not about occupancy. `activeSessions()` says
+     * whether a person is logged in; this says whether anything is reporting a screen.
+     */
+    public function client(): HasOne
+    {
+        return $this->hasOne(PcClient::class);
     }
 
     // -----------------------------------------------------------------

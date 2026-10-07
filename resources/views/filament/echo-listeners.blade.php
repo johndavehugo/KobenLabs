@@ -9,4 +9,4 @@
     echo.js still listens for `EchoLoaded` rather than relying on that ordering,
     because a Livewire navigation swaps the page without re-running this tag.
 --}}
-@vite('resources/js/echo.js')
+@vite(['resources/js/echo.js', 'resources/js/chat-typing.js'])

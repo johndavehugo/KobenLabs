@@ -42,6 +42,19 @@ return [
             'driver' => 'session',
             'provider' => 'users',
         ],
+
+        /*
+         * Machine auth for the Lab Client.
+         *
+         * A request guard rather than a session or token provider: there is no
+         * `pc_clients` Eloquent provider, because the credential is matched by the
+         * digest of a bearer token rather than by an id. Registered in
+         * AppServiceProvider via Auth::viaRequest(), which supplies the callback
+         * that does the lookup.
+         */
+        'pc_client' => [
+            'driver' => 'pc_client',
+        ],
     ],
 
     /*

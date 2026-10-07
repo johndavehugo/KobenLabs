@@ -46,6 +46,15 @@
         ],
 "dev": [
             "Composer\\Config::disableProcessTimeout",
+            "npm run build",
+            "npx concurrently -c \"#86efac,#93c5fd,#c4b5fd\" \"php artisan schedule:work\" \"php artisan queue:listen --tries=1 --timeout=0\" \"php artisan reverb:start --debug\" --names='schedule,queue,reverb'"
+        ],
+        "serve": [
+            "Composer\\Config::disableProcessTimeout",
+            "@php bin/php-cgi-server.php"
+        ],
+        "dev:vite": [
+            "Composer\\Config::disableProcessTimeout",
             "npx concurrently -c \"#86efac,#93c5fd,#c4b5fd,#fdba74,#f9a8d4\" \"php artisan schedule:work\" \"php artisan queue:listen --tries=1 --timeout=0\" \"php artisan reverb:start --debug\" \"npm run dev\" --names='schedule,queue,reverb,vite'"
         ],
         "test": [

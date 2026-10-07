@@ -80,9 +80,9 @@ Additional quirks in the router: it accepts a `?route=` query-parameter fallback
 | 7 | `class_sessions` | Live teaching sessions | `ClassSession` |
 | 8 | `attendance` | Per-session attendance | `Attendance` |
 | 9 | `files` | Personal drive: files **and** folders in one self-referencing tree | `File` |
-| 10 | `messages` | Broadcast mailbox messages | `Message` |
-| 11 | `message_recipients` | Mailbox read state | **none** |
-| 12 | `message_attachments` | Mailbox attachments | **none** |
+| 10 | `messages` | Broadcast mailbox messages — **dropped** | **dropped** |
+| 11 | `message_recipients` | Mailbox read state | **dropped** |
+| 12 | `message_attachments` | Mailbox attachments | **dropped** |
 | 13 | `audit_logs` | Audit trail — **dead table, never written** | none |
 | 14 | `system_config` | Runtime settings — **dead table, never read** | none |
 | 15 | `group_chats` | Chat groups with join codes | `GroupChat` |
@@ -99,7 +99,7 @@ Column-level detail and the Laravel mapping: [schema-mapping.md](./schema-mappin
 
 - **`sessions` name collision.** The legacy `sessions` table (user ↔ PC occupancy) shares a name with Laravel's DB-backed session table, which already exists in the target. The legacy table must be renamed. See [schema-mapping.md](./schema-mapping.md#6-sessions--pcsessions).
 - `schedules` carries **both** `user_id` (creator) and `teacher_id`. `Schedule::getAll()` joins on `user_id` while `ClassSessionController::history()` filters on `teacher_id`. Pick one.
-- `message_attachments.file_size` vs `files.file_size_bytes` — inconsistent naming for the same concept.
+- `message_attachments.file_size` vs `files.file_size_bytes` — inconsistent naming for the same concept. Moot here: direct messages were dropped.
 - `files.parent_folder_id` is `ON DELETE CASCADE` **and** `File::deleteRecursive()` recurses manually — double-delete semantics.
 - "Only one active class session globally" is enforced in application code, not by a constraint.
 - `audit_logs` and `system_config` are created and seeded but **never read or written** by any application code. All effective configuration lives in `config/constants.php`; `Logger::audit()` writes JSON lines to `logs/audit.log` instead of the table.
@@ -406,7 +406,7 @@ Do not port any of this.
 
 ### Additional broken behaviour worth knowing
 
-- `Message::addAttachment()` omits the `NOT NULL` `original_filename` column → guaranteed SQL error. The feature is untested.
+- `Message::addAttachment()` omits the `NOT NULL` `original_filename` column → guaranteed SQL error. Moot here: direct messages were dropped, though it confirms the mailbox was never exercised.
 - `FileController::getStorage()` reads array keys `checkQuota()` does not return → always `null`.
 - `PCController::store()` and 7 other call sites pass `201` into the `$message` slot → HTTP 200.
 - `GroupChat::delete()` **overrides** `BaseModel::delete()` with different semantics — a landmine when converting to Eloquent.

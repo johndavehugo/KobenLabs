@@ -1,4 +1,4 @@
-# Computer Lab Management System — Migration Guide
+﻿# Computer Lab Management System — Migration Guide
 
 **Target:** KobenLabs (`C:\Users\JD\Herd\KobenLabs`)
 **Source:** `capstone-proposal` (`C:\Users\JD\Herd\capstone-proposal`) — registered as the `capstone` reference in `opencode.json`
@@ -23,10 +23,10 @@ Porting the legacy computer lab management system from framework-less PHP/PDO to
 All 8 live feature areas of the legacy app: PC inventory, class sessions, attendance, schedules, year/sections, user management, personal file drive, group chat, and admin dashboard. 19 database tables. 61 HTTP endpoints. 4 WebSocket event types.
 
 ### Out of scope (or requiring an explicit product decision)
-- **Broadcast** — legacy is a stub ("under development"). No backend, no client implementation.
+- **Broadcast** — legacy is a stub ("under development") with no backend. Replaced with a self-hosted Reverb server: four authorized private channels, browser listeners wired on both panels.
 - **Reports** — referenced throughout the legacy docs and tests, **does not exist in code**. No resource, no route, no view.
 - **Student attendance summaries** — a 239-line view exists but is unreachable and its endpoint was never routed.
-- **Screen monitoring** — covert screen streaming of student PCs. Implemented and working in legacy, but carries consent/legal implications. **Dropped, not ported** — see [§7](#7-decisions).
+- **Screen monitoring** — covert screen streaming of student PCs, working in legacy. **Rebuilt fresh as Live Screens**, not ported: the lab machines are institution-owned, so the blocker was engineering rather than permission, and legacy's transport and authorisation were rebuilt rather than copied. See [§7](#7-decisions).
 - **Accessibility panel** — specified in `USER_MANUAL.md` to WCAG 2.1 AA, but the implementing JS/CSS is entirely dead code. The table (`accessibility_settings`) is populated by an API with no auth check.
 
 ### Target state
@@ -159,8 +159,10 @@ Legacy writes to three directories with three different validation policies and 
 | Zone | Legacy path | Target disk / path |
 |---|---|---|
 | User drive | `uploads/users/{userId}/{md5_8}_{name}.{ext}` | `local` disk, `users/{userId}/{uuid7}.{ext}` |
-| Message attachments | `uploads/messages/{messageId}/…` | `local` disk, `messages/{messageId}/…` |
 | Group chat files | `uploads/group-chats/{groupId}/…` | `local` disk, `group-chats/{groupId}/…` |
+
+Direct-message attachments are not listed: that feature was dropped, so files belong to a
+group chat or a user drive and nothing else.
 
 Use `Storage::disk('local')` throughout. Add one `private` disk if the group-chat download path needs a signed URL. Enforce a **single** MIME allowlist in `config/lab.php` — legacy has three disagreeing limits (50 MB / 50 MB / 10 MB).
 
@@ -186,9 +188,9 @@ Use `Storage::disk('local')` throughout. Add one `private` disk if the group-cha
 | User management | `UserController` + `users-api.php` | `UserResource` (drop the role-less script) |
 | Personal file drive | `FileController` + `user/views/files/*` (11 modules) | `MyDrive` page (student) + read-only `StoredFileResource` (staff) — **done** |
 | Group chat | `GroupChatController` + `admin|user/views/messages.js` | `GroupChatResource` + `ChatRoom` on both panels — **done** |
-| Direct messages | `MessageController` (built, but no view ever linked to it) | `Messages` page on both panels — **done** |
+| Direct messages | `MessageController` (built, but no view ever linked to it) | **Dropped** — group chat only, see [schema-mapping](schema-mapping.md#messages-and-friends) |
 | Attachment downloads | None for messages; unauthenticated path parameter for group chat | Two policy-gated routes — **done** |
-| Remote monitoring | `MonitoringController` + Python agent + WS frames | **Dropped, not ported** — see [§7](#7-decisions) |
+| Remote monitoring | `MonitoringController` + Python agent + WS frames | **Rebuilt fresh as Live Screens** — no media relay, per-machine token, policy-scoped frames — see [§7](#7-decisions) |
 | Broadcast | Stub | Self-hosted Reverb, three authorized private channels — **done** |
 | Accessibility | Dead JS/CSS + live-but-unauthenticated API | Drop, or build as an `AccessibilitySetting` relation manager |
 
@@ -223,7 +225,7 @@ Each phase is independently shippable. Phases 0–3 need no realtime; Phase 4 ne
 | 0 — Prerequisites | **Done.** Boost guidelines installed, `CLAUDE.md` re-synced, `.env.example` corrected |
 | 1 — Foundation | **Schema, models, policies and the first two resources done.** 18 migrations applied to `koben_lab`; 9 enums, 14 models, 13 factories, 14 policies; `UserResource` and `YearSectionResource` |
 | 2 — Labs and academics | **Done.** PC presence end to end (service, listeners, sweep, `PcResource`); `ScheduleObserver` + `ScheduleBookingRules`; `ClassSessionService`, `ScheduleResource`, `ClassSessionResource`, read-only attendance roster |
-| 3 — Storage and communication | **Done.** File drive (`FileService`, one quota path, `MyDrive`, read-only `StoredFileResource`), group chat (`GroupChatResource` + `ChatRoom` on both panels), direct messages (inbox + compose + broadcast), and both policy-gated download routes |
+| 3 — Storage and communication | **Done.** File drive (`FileService`, one quota path, `MyDrive`, read-only `StoredFileResource`), group chat (`GroupChatResource` + `ChatRoom` on both panels), and both policy-gated download routes. Direct messages were dropped — group chat only |
 | 4 — Dashboards and parity | Not started |
 | 5 — Realtime | Not started |
 
@@ -262,20 +264,20 @@ The target app has two setup gaps that will corrupt any migration work started b
 - [x] `StoredFileResource` (read-only, staff support) + `MyDrive` page (breadcrumb, table listing, upload, new folder, quota readout).
 - [x] `group_chats` + members + messages + reads migrations and models.
 - [x] `GroupChatResource` (admin, with a members relation manager) + `ChatRoom` page on both panels.
-- [x] `messages` + recipients + attachments, plus the attachment download endpoint legacy never had.
-- [x] **Decision taken:** keep the direct-message mailbox *and* group chat. Legacy shipped both tables but no view ever linked to the mailbox, so the UI here is new surface, not a port.
+- [x] Group chat file uploads and the policy-gated download endpoint legacy never had.
+- [x] **Decision taken:** drop the direct-message mailbox. Legacy shipped the tables but no
+      view ever linked to them, so keeping them would have meant building three tables and
+      two pages of new surface for a feature nobody had used. Group chat only.
 
 #### Communication: what was built and what it closed
 
 | Legacy behaviour | Now |
 | --- | --- |
 | `download-group-file.php` took a **path** and performed no membership check, so any signed-in user could fetch any group's attachments by guessing | `DownloadGroupChatFile` resolves a `GroupChatMessage` and asks `GroupChatMessagePolicy::download`, which defers to `GroupChatPolicy::view` |
-| Message attachments were listed but **no route served them** | `DownloadMessageAttachment`, gated by `MessageAttachmentPolicy`, which defers to `MessagePolicy` so an attachment can never be a way around the message's own visibility |
+| Group chat attachments were served from an unauthenticated path parameter | `DownloadGroupChatFile` resolves a `GroupChatMessage` and asks `GroupChatMessagePolicy::download`, which defers to `GroupChatPolicy::view`. One route, two policy gates — the attachment is not a way around the message's own visibility |
 | `Content-Disposition` built from an unsanitised filename | `Storage::download()` sets the header; a test asserts a CRLF filename cannot inject a header |
-| `GET /api/messages/{id}` did no recipient check | `MessagePolicy::view` is sender-or-recipient, **with no staff override** — an admin reading a teacher's private mail is not support work |
 | `str_shuffle()` for join codes, which is not cryptographically strong | `GroupChat::generateJoinCode()` uses `Str::random()` and retries on collision |
 | Membership check duplicated as an inline `foreach` in five controller methods | `GroupChatPolicy` / `GroupChatMessagePolicy`; the transcript logic lives once in `InteractsWithChatRoom` and each panel gets a thin `Page` |
-| Message rows created without `original_filename`, so the insert always threw | `FileService::storeMessageAttachment()` supplies it |
 
 Two Filament-specific traps found while building this, both worth remembering:
 
@@ -287,9 +289,15 @@ Two Filament-specific traps found while building this, both worth remembering:
 - **`protected static ?string $slug` is the page property**; `$routeSlug` is not read, so a wrong name fails silently and the
   URL falls back to the class name.
 
-`Message` also gained `visibleTo()` / `unreadBy()` scopes so the inbox query and its unread count cannot disagree about who
-can see what, and `markReadBy()` now attaches a missing recipient row — `updateExistingPivot()` silently did nothing for a
-broadcast the reader had no pivot row for, leaving it unread for good.
+Read state lives in `group_message_reads` and is what the sidebar's unread badge counts. It is written when a group is opened,
+not by a button: a badge that only clears when you find and press a control stays wrong all lesson. Two consequences worth
+recording:
+
+- **The author's own messages are excluded.** Somebody has by definition read what they wrote, so counting it would leave a
+  permanent badge on every group a user has ever posted in.
+- **One insert, not a loop.** `GroupChat::markAllReadBy()` collects the unread ids and inserts them in a single statement,
+  using `insertOrIgnore` rather than an upsert. `group_message_reads` is unique on `(message_id, user_id)`, so two tabs open
+  on the same group both decide the same messages are unread — an upsert would fail the second request outright.
 
 #### What the file drive closed
 
@@ -300,12 +308,12 @@ real legacy defect, and each has a test named after it.
 | --- | --- |
 | `ALLOWED_EXTENSIONS` and a 30-entry MIME list declared in `FileController` and never invoked | `assertAllowed()` checks the extension, the sniffed bytes, and the size |
 | Group chat validated `$_FILES['type']`, which the client controls | `assertAllowed()` reads the file with `finfo`. `$file->getMimeType()` is deliberately **not** used: under `Illuminate\Http\Testing\File` it resolves from the *name*, so the check would validate the fixture rather than the payload |
-| Message attachments allowed all file types (per an explicit comment) | Same allowlist as the drive |
-| Quota enforced only on user file uploads, so message and group chat uploads were uncounted | `assertWithinQuota()` on every write, recomputed from `SUM(size)` rather than trusting the drifting `storage_used_mb` column |
+| Group chat files trusted the client's filename | Same allowlist as the drive |
+| Quota enforced only on user file uploads, so group chat uploads were uncounted | `assertWithinQuota()` on every write, recomputed from `SUM(size)` rather than trusting the drifting `storage_used_mb` column |
 | `FileService::deleteTree()` recursed in the database but unlinked only the top-level blob | Blobs for the node **and** every descendant are removed. `StoredFile::deleteTree()` had the same gap — it swept `descendantIds()`, which excludes the node itself, so deleting a single file leaked its blob |
 | `Content-Disposition` built from the unsanitised `original_filename` | `Storage::download()` sets the header |
 | Client supplied `folder_path`, which then disagreed with the written path | Path derived from the folder tree; a parent folder belonging to another account is refused |
-| `Message::addAttachment()` omitted the NOT NULL `original_filename` column, so the insert always threw | Column supplied |
+| Group chat uploads stored no original filename, so downloads had none to offer | `original_name` supplied and the download header set by `Storage::download()` |
 
 Two Filament-specific hazards are worth recording, because neither is visible from the
 legacy code:
@@ -334,7 +342,7 @@ There is no separate parity checklist document. Parity is tracked by the test su
 - [x] Broadcast events: `PcStatusUpdated`, `ClassSessionStarted`, `ClassSessionEnded`, `StudentJoinedClass`, `GroupChatMessageSent`.
 - [x] Private channels with `routes/channels.php` authorization — **the legacy socket has no auth at all; do not port that**.
 - [x] Echo listeners on both panels, registered at `PanelsRenderHook::SCRIPTS_AFTER`. Reverb is self-hosted so student attendance and PC activity stay on school infrastructure rather than a hosted service with a per-connection quota.
-- [x] Python screen agent retired — **dropped, not ported**.
+- [x] Screen agent replaced by the Lab Client in `clients/lab-client/` — built fresh, not ported. The server side (enrolment, per-machine token guard, frame endpoint, `viewScreen` policy, Live Screens grid) is complete and tested.
 
 ---
 
@@ -388,13 +396,20 @@ Passwords are redacted before they reach the log. An audit trail is readable by 
 
 **Trade-off:** the write is queued, so an audit failure never rolls back the staff action that caused it — and if the queue is down the entry is lost. Deliberate.
 
-On #7: replaced with a self-hosted **Laravel Reverb** server. `routes/channels.php` declares three private channels, each asking a policy:
+On #7: replaced with a self-hosted **Laravel Reverb** server. `routes/channels.php` declares four private channels, each asking a policy:
 
 | Channel | Who may subscribe | Why |
 |---|---|---|
 | `pcs` | staff only | PC inventory and occupancy are not a student's business |
 | `class-sessions` | any authenticated user | The student panel needs to be told when a class starts, which is what makes the Join Class button appear |
 | `groups.{groupId}` | group members and staff | The group id is in the channel name, so `GroupChatPolicy::view` decides — a client cannot subscribe to a group it is not in |
+| `monitoring` | staff only | Announces that a PC has a newer frame. Carries **no image data** — see the Live Screens decision above |
+
+A broadcast never carries rendered content here: `ScreenFrameAvailable` sends a
+`pc_id` and the browser then fetches that frame over HTTP through
+`PcPolicy::viewScreen`. That keeps the websocket a signalling channel rather than a
+media server, and it means "may subscribe" is never confused with "may see" — which
+is precisely the substitution legacy's relay made.
 
 Note that `class-sessions` carries `StudentJoinedClass`, so a student learns that *other* students joined a running class. That roster information was already visible to every signed-in user in the legacy app through an unauthenticated endpoint; the roster rows themselves still come from `AttendancePolicy`, which only lets the session's own teacher read them. Narrowing this channel per session is the obvious next tightening.
 
@@ -406,9 +421,67 @@ Note that `class-sessions` carries `StudentJoinedClass`, so a student learns tha
 
 ### Settled
 
-1. **Screen monitoring — DROPPED.** Not ported. Legacy streams student screens to teachers at up to 20 FPS over the LAN. Streaming a student's screen to an authority figure without an explicit consent mechanism raises questions the original capstone project never had to answer. `agent/screen_agent.py` and the vendored 30 MB Python installer stay in the legacy repository; nothing was carried across. Security item 23 no longer applies.
-2. **Broadcast — BUILDING, self-hosted.** Legacy was a stub with no backend. Chose a **self-hosted Laravel Reverb** server over Pusher: this is a single-school lab, and a hosted websocket would put student attendance and PC activity on someone else's infrastructure for a per-connection message quota. Three private channels, each authorized by a policy. See [security debt #7](#6-security-debt-to-repay).
-3. **The `messages` feature — KEPT and given a UI.** The legacy controller was fully implemented (index, show, store, addAttachment, markAsRead, getUnreadCount, destroy) but no view ever linked to it, so it was unreachable. Built rather than retired: a student inbox, staff compose, broadcast to all students, and the attachment download endpoint legacy never had. This is new surface, not a port.
+1. **Screen monitoring — BUILT FRESH as Live Screens.** Originally dropped, then reconsidered: these are the lab's own machines, owned by the institution, so there is no third-party device being watched and no consent question of the kind that made the legacy feature a problem. What is still owed is engineering, not permission — and the legacy implementation had serious faults, so it was rebuilt rather than ported. Full reasoning below.
+
+   ### Screen monitoring: Live Screens
+
+   **Why not a port.** The legacy design streamed 20 fps at 1280 px over a WebSocket relay that:
+
+   - accepted `agent_register` from **anything** that connected, with no credential,
+     trusting a self-reported IP — so any host on the lab network could inject a fake
+     machine's screen into a teacher's grid;
+   - let a browser **self-assert `{"role": "teacher"}`** from `localStorage`, so a
+     student who edited one key received every screen in the lab. Its HTTP roster
+     endpoint *was* role-checked, which made the socket a complete bypass of the only
+     control present;
+   - **fanned every frame to every connected teacher**, including teachers with no
+     class. The "only my class" filtering was a client-side check over a 10-second poll
+     — the frames had already been transmitted and decoded by the time it ran, so it
+     was decoration, not a control;
+   - moved **base64 over plaintext**, so screen content was readable by anyone sniffing
+     the LAN;
+   - wrote **no monitoring tables at all**, so "who watched this student, and when" had
+     no answer;
+   - had a scheduled task bound to one `%USERNAME%` with no restart policy, so one
+     network blip killed an agent for the rest of the session, and an uninstaller using
+     `wmic` that silently did nothing on current Windows.
+
+   **What replaced it.** No media relay at all. The Lab Client posts a frame to
+   `/api/client/frame` over ordinary authenticated HTTP; the server overwrites one file
+   per PC and broadcasts only a `pc_id`. The browser then fetches that one frame through
+   `PcPolicy::viewScreen`. Three things follow: the websocket carries no image data, the
+   teacher never receives bytes for a PC outside their class because each fetch is
+   authorized on its own, and bandwidth tracks what the teacher looks at rather than
+   what every PC captures.
+
+   **Naming.** The PC-side software is the **Lab Client**, the staff view is **Live
+   Screens**. Legacy called it an "agent", which reads as malware to non-technical staff
+   and attracts endpoint-protection software on lab machines.
+
+   **Scope.** A teacher sees only the PCs their own class is using; an administrator sees
+   the whole lab. Both the grid and the frame endpoint resolve this through one
+   `ScreenAccessService`, so they cannot disagree — which is exactly how legacy's
+   filtered-UI-over-unfiltered-socket arrangement worked.
+
+   **Audit.** Who viewed which PC, and when, is recorded as metadata. Frame bytes are
+   never retained: one JPEG per PC, overwritten in place. A test asserts the audit count
+   does not grow per frame fetch, since that would write thousands of identical rows a
+   minute.
+
+   **Kept from legacy:** `mss` + Pillow capture, the reused `BytesIO`, and client-side
+   frame-drop giving a slow viewer natural backpressure. **Fixed:** `NEAREST` downscaling
+   (aliased text) became BILINEAR; reconnect is infinite with capped exponential backoff
+   resetting per drop rather than cumulatively; and a locked desktop now pauses capture
+   instead of streaming a lock screen that looks live.
+
+   **Deliberately out of scope for v1:** no audio (as legacy), single monitor per PC, no
+   recording, and the solo view shows the same capture rate as the grid.
+
+   Security item 23 is closed by design: the client authenticates with a per-machine
+   token minted by an administrator and stored only as a hash. Deployment is documented
+   in [`docs/reference.md`](../reference.md#8b-live-screens-optional).
+2. **Broadcast — DONE, self-hosted.** Legacy was a stub with no backend. Chose a **self-hosted Laravel Reverb** server over Pusher: this is a single-school lab, and a hosted websocket would put student attendance and PC activity on someone else's infrastructure for a per-connection message quota. Four private channels, each authorized by a policy, with browser listeners wired on both panels. See [security debt #7](#6-security-debt-to-repay).
+3. **The `messages` feature — DROPPED.** Legacy's controller was fully implemented (index, show, store, addAttachment, markAsRead, getUnreadCount, destroy) but no view ever linked to it, so it was unreachable in the app this replaces. Every legacy "Messages" nav item rendered group chat instead. Retired rather than given a UI: it would have meant three tables, two pages and a broadcast path for a feature nobody had reached, and group chat already covers every classroom use. The migration initially kept it and then reversed that — the tables and pages were removed rather than left dormant. See [schema-mapping](schema-mapping.md#messages-and-friends).
 4. **Storage quota — 500 MB student / 2 GB teacher / 5 GB admin**, in `config('lab.storage')`. Legacy stated four different values.
 5. **PC identity: IP.** Already the case in the built code; MAC is nullable and decorative, matching legacy's actual state.
 6. **Session timeout — 120 minutes**, in `config('lab.session.lifetime_minutes')`. Legacy's documentation claimed 10, 30, 30 and 60 minutes in four places while the code ran a 10-minute sliding window. Filament 5 removed the panel-level `authTimeout()` knob, so the session lifetime is the only control and there is nothing for it to drift against.

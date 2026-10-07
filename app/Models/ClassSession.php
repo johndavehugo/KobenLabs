@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Collection;
 
 #[Fillable(['schedule_id', 'started_by_id', 'started_at', 'ended_at', 'status'])]
 #[ObservedBy(ClassSessionObserver::class)]
@@ -110,7 +111,21 @@ class ClassSession extends Model
     /**
      * PCs currently occupied by this session's attendees.
      */
-    public function occupiedPcs()
+    public function occupiedPcs(): Collection
+    {
+        return $this->occupiedPcsQuery()->get();
+    }
+
+    /**
+     * The same set as occupiedPcs(), as a query.
+     *
+     * Split out because Live Screens asks this question once per PC per refresh
+     * rather than once per session, and hydrating a Collection to answer it would
+     * turn a 40-tile grid into 40 separate collections.
+     *
+     * @return Builder<Pc>
+     */
+    public function occupiedPcsQuery(): Builder
     {
         return Pc::query()
             ->whereIn(
@@ -119,7 +134,6 @@ class ClassSession extends Model
                     ->whereIn('user_id', $this->attendance()->select('user_id'))
                     ->active()
                     ->select('pc_id'),
-            )
-            ->get();
+            );
     }
 }

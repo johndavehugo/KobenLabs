@@ -1,0 +1,37 @@
+# Pinned deliberately.
+#
+# The legacy installer ran `pip install mss websocket-client Pillow` on every lab
+# PC at install time with no version bounds, so a lab could be running different
+# capture code from its neighbour after an unrelated release. Every version here is
+# pinned so the whole fleet is identical, and so a rebuild reproduces the same binary.
+#
+# These three are the oldest releases with a cp314 (Python 3.14) wheel, which matters
+# because that is what a current lab machine has. An earlier pin — mss 9.0.2,
+# Pillow 10.4.0, pywin32 306 — reproduced the versions legacy had used, and failed to
+# install at all: pip falls back to building from source and then fails. The lesson is
+# the one legacy ignored in the other direction, since an unbounded requirement is
+# what breaks a fleet and so is a pin that excludes the Python actually in use.
+mss==10.2.0
+Pillow==12.1.0
+
+# Window lookup for lock detection.
+#
+# win32gui.FindWindow on the LockApp class. This is the *only* reason pywin32 is a
+# dependency, which is worth stating plainly: the obvious alternative was the WTS
+# session-notification API, but pywin32 exposes it as WTSRegisterSessionNotification,
+# which needs a window handle and a running message pump. A background capture process
+# has neither. FindWindow needs neither and costs microseconds, polled once per capture.
+#
+# Without lock detection a locked machine streams the lock screen or a black frame at
+# full rate, so it looks identical to a working one — the single thing most likely to
+# make staff stop trusting the feature.
+pywin32==311; sys_platform == "win32"
+
+# Builds lab_client.exe. Not needed on the lab machines themselves.
+#
+# 6.22.3, the oldest release with a cp314 wheel. Same lesson as the three pins above:
+# this pin was originally 6.11.1, and pip refused the whole requirements file because
+# every PyInstaller below 6.15 declares Requires-Python >=3.8,<3.14. A pin that
+# excludes the interpreter in use is worse than no pin, because it blocks the entire
+# install rather than just itself.
+pyinstaller==6.22.3
