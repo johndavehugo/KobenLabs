@@ -1,90 +1,87 @@
-﻿<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+﻿# KobenLabs
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+A computer-laboratory management system for schools — PCs, classes,
+attendance, files, group chat, audit trail, and live screen supervision in one
+web app, plus a lightweight background client for each lab PC.
 
-## KobenLabs
+Built with [Laravel](https://laravel.com) 13 and [Filament](https://filamentphp.com) 5.
+Replaces a legacy framework-less PHP/PDO application; the migration rationale
+lives in [`docs/migration/`](docs/migration/).
 
-A computer-lab management system built on Laravel and Filament, replacing the legacy
-PHP/PDO application.
+## Features
 
-**New machine? Start here -> [`docs/installation.md`](docs/installation.md)** - from
+- **Staff panel (`/admin`)** — user accounts, year-sections with quotas,
+  PC inventory with online/idle/maintenance presence, class bookings with
+  conflict detection, live class sessions with real-time rosters, read-only
+  view of every file in the lab, group-chat administration, and **Live
+  Screens**: one tile per lab PC, solo screen view, scoped so teachers see
+  only their own class.
+- **Student panel (`/student`)** — join a running class with one click,
+  personal file drive (folders, ZIP download, 50 MB uploads, executable
+  blocking, quotas), group chat with join codes, file sharing, read receipts
+  and typing indicators, and a personal attendance summary (rate, by subject,
+  recent sessions).
+- **Lab client** — invisible Windows program (~15 MB, no Python needed on lab
+  PCs) capturing and uploading screens about once per second. One-time
+  enrolment codes (stored as hashes), per-machine states (reporting, silent,
+  never checked in, revoked), server-tuned capture settings. Lives in
+  [`clients/lab-client/`](clients/lab-client/), deployed per machine.
+- **Behind the scenes** — policy-gated everything (teachers see only their
+  own rosters/PCs), self-hosted Reverb websockets for live updates, queued
+  audit trail with secret redaction, scheduled idle-PC collection, 420+
+  automated tests.
+
+Full feature reference: [`docs/system-overview.md`](docs/system-overview.md).
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Backend | Laravel 13, PHP 8.4 |
+| UI | Filament 5, Livewire 4, Tailwind CSS 4 (Vite) |
+| Database | MySQL 8 (SQLite in-memory for tests) |
+| Real-time | Laravel Reverb |
+| Testing | Pest 5, Laravel Pint |
+| Lab client | Python (PyInstaller single-file `.exe`) |
+
+## Quick Start
+
+**New machine? Follow [`docs/installation.md`](docs/installation.md)** — from
 nothing installed to a working system, one step at a time.
 
-[`docs/reference.md`](docs/reference.md) is the reference version: every setting explained, for
-when you need a detail rather than the path through.
-
-Further reading:
-
-- [`docs/migration/README.md`](docs/migration/README.md) - migration plan, the
-  security debt being repaid, and why each decision went the way it did
-- [`docs/migration/legacy-system.md`](docs/migration/legacy-system.md) - what the old
-  system did
-- [`docs/migration/schema-mapping.md`](docs/migration/schema-mapping.md) - table and
-  column mapping
-
-Two Filament panels: staff at `/admin`, students at `/student`.
-
-What it does: PC inventory and presence, class sessions with an attendance roster,
-schedules, per-student file drives, group chat, an audit trail, and
-**Live Screens** - a background client on each lab PC reporting its screen to a staff
-page. Live Screens is optional and off the critical path; see
-[`docs/reference.md` section 8b](docs/reference.md#8b-live-screens-optional).
-
-The lab client lives in [`clients/lab-client/`](clients/lab-client/) and is deployed
-per machine, not through Composer or npm.
-
----
-## About Laravel
-
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
-
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
-
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
-
-## Learning Laravel
-
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
-
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
-
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
-
-## Agentic Development
-
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
-
 ```bash
-composer require laravel/boost --dev
-
-php artisan boost:install
+composer install
+npm install
+cp .env.example .env   # PowerShell: Copy-Item .env.example .env
+# fill in DB_* in .env, then:
+php artisan key:generate
+php artisan migrate --force
+php artisan db:seed --force   # creates admin@example.com / password — change it
+npm run build
+composer run dev
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+Open `http://kobenlabs.test` (Herd). Sharing with lab PCs over the network:
+[`docs/installation.md` — Sharing with the lab](docs/installation.md#sharing-with-the-lab).
 
-## Contributing
+## Documentation
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+| Doc | Contents |
+|---|---|
+| [`docs/system-overview.md`](docs/system-overview.md) | Whole-system reference: actors, features, architecture, stack, security |
+| [`docs/installation.md`](docs/installation.md) | Install, lab-PC enrolment, network sharing, troubleshooting |
+| [`docs/reference.md`](docs/reference.md) | Every setting explained, Live Screens internals |
+| [`docs/migration/README.md`](docs/migration/README.md) | Migration plan and security debt repaid |
+| [`docs/migration/legacy-system.md`](docs/migration/legacy-system.md) | What the old system did |
+| [`docs/migration/schema-mapping.md`](docs/migration/schema-mapping.md) | Old → new table/column mapping |
 
-## Code of Conduct
+## Testing
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
-
-## Security Vulnerabilities
-
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+```bash
+php artisan test --compact   # full suite, in-memory SQLite
+vendor/bin/pint --dirty      # code style for changed PHP files
+```
 
 ## License
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+Open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
