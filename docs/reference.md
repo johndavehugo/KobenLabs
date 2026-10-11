@@ -156,6 +156,8 @@ http://kobenlabs.test
 
 ### Without Herd
 
+For use on this machine only:
+
 ```bash
 php artisan serve --port=8000
 ```
@@ -165,6 +167,10 @@ Then set `APP_URL=http://localhost:8000` in `.env` and clear the config cache:
 ```bash
 php artisan config:clear
 ```
+
+To share with other machines on the network, follow
+[`installation.md` Sharing with the lab](installation.md#sharing-with-the-lab) instead —
+it uses raw `php -S`, bound to every interface, with the firewall and `APP_URL` steps.
 
 #### Do not point the Lab Client at `artisan serve`
 
@@ -186,8 +192,9 @@ client log filling with `frame rejected with HTTP 200`. Nothing else goes wrong,
 what makes it hard to read — the server is healthy, the code is valid, and the frames are
 being captured.
 
-**Use Herd for anything the Lab Client talks to.** `http://kobenlabs.test` handles frame
-uploads correctly. `artisan serve` is fine for *viewing* Live Screens in a browser, since
+**Use Herd or raw `php -S` for anything the Lab Client talks to.** `http://kobenlabs.test` handles frame
+uploads correctly, as does `php -S 0.0.0.0:8000 -t public`, which keeps the full environment.
+`artisan serve` is fine for *viewing* Live Screens in a browser, since
 those requests are GETs and never need a buffer.
 
 ---
@@ -198,48 +205,30 @@ The steps are in [`installation.md`](installation.md#sharing-with-the-lab) — t
 the "how". This section only covers the "why", which is the part that is hard to re-derive
 when something breaks.
 
-**Why Apache at all?** Herd binds `127.0.0.1:80` — loopback only. It is a development
+**Why not Herd?** Herd binds `127.0.0.1:80` — loopback only. It is a development
 server, and no other machine can reach it by any address. `herd share` is the only supported
 way to reach a Herd site from elsewhere, and that publishes to the internet, which is not
 what a lab wants for student data.
 
-**Why not move the project into `htdocs`?** It does not help. Apache loads
-`C:\xampp\php\php8apache2_4.dll` wherever the site lives, and that is PHP **8.2.12**. The app
-needs **8.4.1** — Composer's generated `vendor/composer/platform_check.php` rejects anything
-older on every request, with a 500 before the login page renders. The PHP version is a
-property of the server, not of the folder.
+**Why raw `php -S` and not `php artisan serve`?** They start the same built-in
+server, but `artisan serve` filters the environment down to a passthrough list
+(`ServeCommand::$passthroughVariables`) that omits `TEMP` and `TMP`. PHP then
+has no temporary directory and discards every frame POST before Laravel sees
+it — while answering `200 OK`, so the client looks healthy and stays `Silent`
+forever. Raw `php -S` inherits the full environment, so uploads buffer
+correctly. Verified with a multipart POST test.
 
-**Why not update XAMPP?** Its newest release still ships PHP 8.2.12, so there is nothing
-newer to install. And PHP stopped publishing **thread-safe** Windows builds, which an Apache
-module requires — `windows.php.net` offers only `nts`. So a newer PHP cannot be dropped in as
-a module either. Both routes are closed.
+**Why `0.0.0.0:8000`?** `0.0.0.0` binds every interface, which is what makes the
+app reachable from lab PCs. Port 8000 keeps clear of Herd's port 80 and of
+Reverb on 8080.
 
-**Why FastCGI?** It runs PHP as a separate process, where thread safety does not apply, so
-Herd's existing **NTS 8.4.25** works unchanged. Herd already does exactly this for
-`kobenlabs.test`, using `php-cgi` on port 9084 — the lab setup just points Apache at the same
-kind of process on port 9000.
+**Why `PHP_CLI_SERVER_WORKERS=4`?** The built-in server answers one request at
+a time per process, and several Lab Clients post frames every second. A single
+worker queues them; four workers answer concurrently.
 
-**Why `ProxyFCGIBackendType GENERIC`?** Apache assumes a FastCGI backend is PHP-FPM.
-`php-cgi` is not, and Apache then misreads `SCRIPT_FILENAME` and fails every single request:
-
-```
-URI cannot be parsed: fcgi://127.0.0.1:9000C:/Users/.../index.php
-```
-
-This is the single most common reason this setup does not work, and the error names neither
-PHP nor FastCGI, so it reads like an Apache bug rather than a missing directive. It needs
-Apache **2.4.26+**; older versions reject the directive outright.
-
-**Why port 8082 rather than 80?** Port 80 is shared with whatever else the machine serves. A
-separate port means a mistake in this config cannot take those sites down.
-
-**Why `DocumentRoot` and not `Alias`?** An alias leaves `SCRIPT_FILENAME` ambiguous on
-Windows, because the path Apache derives has no leading slash and is concatenated rather
-than treated as a path component.
-
-**Why `httpd -t` before restarting?** A malformed line anywhere in an included file stops
-the whole server from starting, taking every other site with it. The syntax check catches that
-before anything restarts, which is why it is a separate step rather than part of the restart.
+**Why a stable IP?** Each Lab Client stores its server URL at install time. If
+DHCP hands the server a new address, every enrolled machine talks to the old
+one until it is reinstalled — a lab-wide outage with no error on the server.
 
 **Why `npm run build` and never `npm run dev`?** A dev server writes `public/hot` containing
 a loopback address such as `http://[::1]:5173`. Lab PCs then try to load the app's CSS and
@@ -258,14 +247,14 @@ indicators work for you and silently fail for everyone else — the most mislead
 the whole setup, because it works when you test it.
 
 **Why do the upload limits need raising separately?** PHP rejects files over 2 MB by default
-while the app allows 50 MB (`LAB_UPLOAD_MAX_KB`). Fixing the PHP *version* does not fix this,
-so it is a genuinely separate step. `post_max_size` must exceed `upload_max_filesize` to
+while the app allows 50 MB (`LAB_UPLOAD_MAX_KB`), so it is a genuinely separate step.
+`post_max_size` must exceed `upload_max_filesize` to
 leave room for the multipart headers.
 
-**Why does `php-cgi` need starting at boot?** Apache as a service restarts itself;
-`php-cgi` does not. Without it the site returns `502 Bad Gateway` after a reboot while
-everything else on the machine still works, which points at Apache rather than at the missing
-process.
+**Why start both windows after a reboot?** Neither the PHP server nor
+`composer run dev` restarts itself. After a reboot the lab PCs get connection
+errors while everything on the server looks fine — which points at the network
+rather than at the two missing windows.
 
 ---
 
@@ -341,8 +330,9 @@ lab server — see §5b.
 composer run serve
 ```
 
-Starts `php-cgi` on `127.0.0.1:9000`, which Apache needs on a lab server (§5b). Only
-required there; on a dev machine Herd already runs its own `php-cgi`.
+Starts `php-cgi` on `127.0.0.1:9000`. This belonged to the retired Apache lab-server
+setup and is not used by the current sharing flow, which serves with raw `php -S`
+instead (see §5b).
 
 **If port 8080 is already taken**, something else on the machine holds it. Change
 `REVERB_PORT` in `.env`, and remember the Vite build reads it at build time, so re-run
@@ -432,11 +422,12 @@ enrolling a handful of machines should not have to know they exist.
 
 ### Install the client
 
-Copy `clients/lab-client/` to the lab PC, then **double-click `install.cmd`**.
+Copy `KobenLabs-Setup\` (refreshed by `clients\lab-client\build.ps1`, which bakes in
+the server's `APP_URL`) to the lab PC, then **double-click `install.cmd`**.
 
 It asks Windows for permission once, then asks you two questions:
 
-1. **Server address** — the server PC's IP, e.g. `http://192.168.1.10`. You can paste
+1. **Server address** — the server PC's IP and port, e.g. `http://192.168.1.10:8000`. You can paste
    the bare address and it assumes `http://`.
 2. **The one-time code** — from the Enrol client button.
 

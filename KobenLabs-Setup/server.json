@@ -1,1 +1,1 @@
-{ "url": "http://kobenlabs.test", "_comment": "Written by build.ps1 from the app's APP_URL. Edit and re-run build.ps1 to change it." }
+{ "url": "http://192.168.254.137:8000", "_comment": "Written by build.ps1 from the app's APP_URL. Edit and re-run build.ps1 to change it." }

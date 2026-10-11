@@ -138,8 +138,9 @@ That produces `dist\lab_client.exe` and a `KobenLabs-Setup` folder.
    IP
 3. On that computer's row: **Enrol client** → copy the code (shown **once**)
 4. On the computer: double-click **`install.cmd`**, accept the admin prompt, enter the
-   server address — `http://kobenlabs.test` on your dev machine, or
-   `http://192.168.254.103:8082` on the lab server — then paste the code
+   server address — `http://kobenlabs.test` on your dev machine (Herd), or
+   `http://192.168.254.103:8000` on the shared server (see
+   [Sharing with the lab](#sharing-with-the-lab)) — then paste the code
 
 **Nothing is installed on the computer** — no Python, no libraries. That's why we ship a
 built `.exe` rather than a script.
@@ -152,67 +153,46 @@ To remove it later: `uninstall.cmd` in the same folder.
 
 ## Sharing with the lab
 
-**On the PC the lab's browsers talk to** — not the one you develop on.
+**On the PC the lab shares from** — your own PC for a classroom demo, or a
+dedicated server PC for longer use.
 
-Herd only listens on `127.0.0.1`, your own machine, so lab PCs cannot reach it. That PC
-needs Apache instead. Replace `192.168.254.103` below with this machine's IP (`ipconfig`).
+Herd only listens on `127.0.0.1`, your own machine, so lab PCs cannot reach
+`http://kobenlabs.test`. Serve the app on the local network instead with PHP's
+own web server, bound to every interface. Replace `192.168.254.103` below with
+this machine's IP — run `ipconfig` and use the Wi-Fi/Ethernet `IPv4 Address`.
 
-### 1. Find Herd's php-cgi
+> Use raw `php -S`, **not** `php artisan serve`. On Windows, `artisan serve`
+> drops `TEMP` and `TMP` from the server's environment, so PHP cannot buffer
+> frame POSTs and every Lab Client stays `Silent` while looking healthy.
+> Raw `php -S` inherits the full environment and handles uploads correctly
+> (verified with a multipart POST test).
+
+### 1. Give this PC a stable address
+
+If this PC gets its IP from DHCP, every enrolled Lab Client breaks the next
+time the lease renews. Set a static IP — or a DHCP reservation on the router —
+before enrolling a single machine.
+
+### 2. `.env`
+
+```dotenv
+APP_URL=http://192.168.254.103:8000
+REVERB_HOST=192.168.254.103
+PHP_CLI_SERVER_WORKERS=4
+```
 
 ```bash
-herd which-php kobenlabs.test
+php artisan config:clear
 ```
 
-`php-cgi.exe` is in that same folder. `"<folder>\php-cgi.exe" -v` must report **8.4.1+**.
+`PHP_CLI_SERVER_WORKERS=4` lets the dev server answer several frame uploads at
+once instead of queueing them one by one.
 
-### 2. Write the Apache config
+### 3. Raise the upload limits
 
-New file `C:\xampp\apache\conf\extra\httpd-kobenlabs.conf`:
-
-```apache
-Listen 8082
-
-LoadModule proxy_fcgi_module modules/mod_proxy_fcgi.so
-ProxyFCGIBackendType GENERIC
-
-<VirtualHost *:8082>
-    DocumentRoot "C:/path/to/KobenLabs/public"
-
-    <Directory "C:/path/to/KobenLabs/public">
-        AllowOverride All
-        Require all granted
-
-        <FilesMatch "\.php$">
-            SetHandler "proxy:fcgi://127.0.0.1:9000"
-        </FilesMatch>
-    </Directory>
-</VirtualHost>
-```
-
-Change `DocumentRoot` to this machine's path.
-
-### 3. Include it
-
-Append to `C:\xampp\apache\conf\httpd.conf`:
-
-```apache
-Include conf/extra/httpd-kobenlabs.conf
-```
-
-### 4. Check the syntax, then restart
-
-```bash
-"C:\xampp\apache\bin\httpd.exe" -t
-```
-
-Must print `Syntax OK`. **Do not restart until it does** — one bad line stops the whole
-server, including every other site on the machine.
-
-Restart Apache, then check the other sites still load.
-
-### 5. Raise the upload limits
-
-In `C:\Users\you\.config\herd\bin\php84\php.ini`:
+In the `php.ini` of the PHP Herd uses — `herd which-php kobenlabs.test` shows
+the folder, and `"<folder>\php-cgi.exe" -v` must report **8.4.1+**. The
+`php.ini` is inside that same folder:
 
 ```ini
 upload_max_filesize = 50M
@@ -221,33 +201,16 @@ post_max_size = 52M
 
 PHP defaults to 2M; the app allows 50M.
 
-### 6. Start php-cgi
-
-```bash
-composer run serve
-```
-
-Leave it running.
-
-### 7. `.env`
-
-```dotenv
-APP_URL=http://192.168.254.103:8082
-REVERB_HOST=192.168.254.103
-```
-
-```bash
-php artisan config:clear
-```
-
-### 8. Firewall — Administrator PowerShell
+### 4. Firewall — Administrator PowerShell
 
 ```powershell
-New-NetFirewallRule -DisplayName "KobenLabs HTTP" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8082 -Profile Any
+New-NetFirewallRule -DisplayName "KobenLabs HTTP" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8000 -Profile Any
 New-NetFirewallRule -DisplayName "KobenLabs Reverb" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8080 -Profile Any
 ```
 
-### 9. Build the assets
+Without these, lab PCs reach neither the app (8000) nor live updates (8080).
+
+### 5. Build the assets
 
 ```bash
 npm run build
@@ -257,14 +220,37 @@ npm run build
 machine, and lab PCs then load no CSS or JS, with no error message. `composer run dev` is
 fine; `composer run dev:vite` is not.
 
-### 10. Start on boot
+### 6. Start the servers — leave both windows open
 
-XAMPP Control Panel — tick **Apache** under *Service*. Add a startup task running
-`composer run serve` in the project folder.
+```powershell
+$env:PHP_CLI_SERVER_WORKERS=4
+php -S 0.0.0.0:8000 -t public
+```
+
+and in a second window:
+
+```bash
+composer run dev
+```
+
+The first serves the app to the lab; the second runs the queue worker,
+scheduler and Reverb. Without them, uploads never save and screens never
+update live. After a reboot, start both again.
+
+### 7. Refresh the setup folder
+
+```powershell
+cd clients\lab-client
+.\build.ps1
+```
+
+This rebuilds `lab_client.exe` and bakes the new `APP_URL` into
+`KobenLabs-Setup\server.json`, so the installer suggests the right address on
+every lab PC.
 
 ### Check it works
 
-From a lab PC, open `http://192.168.254.103:8082`:
+From a lab PC, open `http://192.168.254.103:8000`:
 
 1. Log in
 2. Create a group, note the join code
@@ -275,8 +261,8 @@ From a lab PC, open `http://192.168.254.103:8082`:
 
 ### To undo it
 
-Remove the `Include` line, delete `httpd-kobenlabs.conf`, restart Apache. Nothing in the
-project depends on Apache.
+Stop both server windows, delete the two firewall rules, and set `APP_URL` back
+to `http://kobenlabs.test`. Nothing in the project depends on the shared setup.
 
 **Why any of this is necessary:** see
 [`reference.md` section 5b](reference.md#5b-why-the-lab-server-is-set-up-this-way).
@@ -293,14 +279,14 @@ project depends on Apache.
 | Page has no styling | `npm run build` |
 | Styling works on my PC but not my phone | Run `npm run build`. If you used `composer run dev:vite`, switch back to `composer run dev` — it leaves a `public/hot` file that points assets at your own machine |
 | Screens say "no signal" | Re-run `install.cmd` on that computer |
-| Reports live but shows no image | You entered an **IP** as the server address — use `http://kobenlabs.test` |
+| Reports live but shows no image | The client points at `php artisan serve`, which discards POST bodies — serve with raw `php -S` (Sharing with the lab, step 6) |
 | Chat and screens don't update live | Reverb isn't running — check `composer run dev` |
 | Uploads never save | Queue worker isn't running |
 | "Vite manifest" error | `npm run build` |
 | Lab PC gets a blank unstyled page | A stale `public/hot` is pointing assets at your own machine. Delete it, then `npm run build` |
-| Lab PC can't connect at all | Apache isn't listening, or the firewall rule is missing |
+| Lab PC can't connect at all | The `php -S` window is closed, or the firewall rules are missing (Sharing with the lab, steps 4 and 6) |
 | Live updates work for me but not the class | `REVERB_HOST` is `localhost`. Set it to the server's IP |
-| `502 Bad Gateway` after a reboot | `composer run serve` isn't starting with Windows — see [reference.md](reference.md#5b-serving-on-the-lab-server) |
+| Lab PCs can't reach the app after a reboot | The two server windows aren't running — start them again (Sharing with the lab, step 6) |
 
 Logs: `storage/logs/laravel.log`.
 
@@ -320,7 +306,7 @@ listens on `127.0.0.1` — your own machine. Lab PCs must reach the app by IP. S
 **Don't point the Lab Client at `php artisan serve`.** It works for viewing, but it drops
 `TEMP` and `TMP` from PHP's environment, so PHP has nowhere to buffer a POST body. Every
 screen frame is silently discarded while the machine still reports as healthy. Use Herd on
-your machine; on the lab server use Apache, for the same reason.
+your machine; use raw `php -S 0.0.0.0:8000 -t public` when sharing, for the same reason.
 
 ---
 
@@ -350,5 +336,5 @@ vendor\bin\pint           # fix code style
 php artisan config:clear  # after editing .env
 composer run dev          # queue, scheduler and Reverb
 composer run dev:vite     # the above, plus hot reload - dev machines only
-composer run serve        # php-cgi on port 9000 - lab server only
+composer run serve        # php-cgi on port 9000 - only needed the retired Apache setup; sharing uses `php -S 0.0.0.0:8000 -t public` instead
 ```
