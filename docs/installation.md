@@ -70,8 +70,8 @@ blank; the next step fills them.
 ## 4. Five commands, in this order
 
 ```bash
-php artisan key:generate      # APP_KEY
-php artisan reverb:install    # REVERB_APP_ID / KEY / SECRET
+php artisan key:generate          # APP_KEY
+php artisan app:setup-reverb-env  # fill blank REVERB_APP_ID / KEY / SECRET (reverb:install skips keys that already exist, even blank)
 php artisan migrate --force   # builds all 23 tables
 php artisan db:seed --force   # creates your admin login
 npm run build                 # compiles CSS and JavaScript
